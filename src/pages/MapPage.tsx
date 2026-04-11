@@ -87,8 +87,11 @@ function MapBounds({ markers, center, userLocation, filterKey }: { markers: { la
   useEffect(() => {
     if (filterKey !== lastFilterKey) {
       if (markers.length > 0 && !center) {
-        const bounds = L.latLngBounds(markers.map(m => [m.lat, m.lng]));
-        map.fitBounds(bounds, { padding: [50, 50] });
+        const validMarkers = markers.filter(m => !isNaN(Number(m.lat)) && !isNaN(Number(m.lng)));
+        if (validMarkers.length > 0) {
+          const bounds = L.latLngBounds(validMarkers.map(m => [Number(m.lat), Number(m.lng)]));
+          map.fitBounds(bounds, { padding: [50, 50] });
+        }
       }
       setLastFilterKey(filterKey);
     }
@@ -160,7 +163,7 @@ export default function MapPage() {
 
     if (searchedCenter) {
       // If radius search is active, only show ODPs within 250m
-      result = result.filter(odp => getDistance(searchedCenter[0], searchedCenter[1], odp.LATITUDE, odp.LONGITUDE) <= 250);
+      result = result.filter(odp => getDistance(searchedCenter[0], searchedCenter[1], Number(odp.LATITUDE), Number(odp.LONGITUDE)) <= 250);
     }
 
     return result;
@@ -190,7 +193,7 @@ export default function MapPage() {
     // Search by ODP Name
     const found = odps.find(o => o.ODP_NAME.toLowerCase().includes(searchInput.toLowerCase()));
     if (found) {
-      setSearchedCenter([found.LATITUDE, found.LONGITUDE]);
+      setSearchedCenter([Number(found.LATITUDE), Number(found.LONGITUDE)]);
       addVisitedODP(found.ODP_NAME);
     } else {
       alert("ODP tidak ditemukan");
@@ -251,7 +254,7 @@ export default function MapPage() {
               <Circle center={searchedCenter} radius={250} pathOptions={{ color: 'red', fillColor: 'red', fillOpacity: 0.1 }} />
 
               {/* Marker for searched coordinate if it's not an exact ODP match */}
-              {!odps.find(o => o.LATITUDE === searchedCenter[0] && o.LONGITUDE === searchedCenter[1]) && (
+              {!odps.find(o => Number(o.LATITUDE) === searchedCenter[0] && Number(o.LONGITUDE) === searchedCenter[1]) && (
                 <Marker position={searchedCenter} icon={L.divIcon({ className: 'bg-red-600 w-3 h-3 rounded-full border-2 border-white shadow-md', iconSize: [12, 12] })}>
                   <Popup>Titik Pencarian</Popup>
                 </Marker>
@@ -270,11 +273,15 @@ export default function MapPage() {
               )}
 
               {/* Routes from Searched Center to Alternative ODPs */}
-              {filteredODPs.map((odp, index) => {
-                const dist = getDistance(searchedCenter[0], searchedCenter[1], odp.LATITUDE, odp.LONGITUDE);
+              {filteredODPs.map((odp) => {
+                const lat = Number(odp.LATITUDE);
+                const lng = Number(odp.LONGITUDE);
+                if (isNaN(lat) || isNaN(lng)) return null;
+
+                const dist = getDistance(searchedCenter[0], searchedCenter[1], lat, lng);
                 if (dist < 1) return null; // Skip if it's the exact same point
                 return (
-                  <Polyline key={`alt-${odp.ODP_NAME}-${index}`} positions={[searchedCenter, [odp.LATITUDE, odp.LONGITUDE]]} color="red" weight={2} dashArray="4, 4" opacity={0.6}>
+                  <Polyline key={`alt-${odp.ODP_NAME}`} positions={[searchedCenter, [lat, lng]]} color="red" weight={2} dashArray="4, 4" opacity={0.6}>
                     <Tooltip permanent direction="center" className="bg-white/90 text-red-600 font-bold text-[10px] border-none shadow-sm px-1 py-0.5 rounded">
                       {Math.round(dist)} m
                     </Tooltip>
@@ -287,10 +294,14 @@ export default function MapPage() {
           {/* Routes when FILTER is active (but NO search) */}
           {!searchedCenter && isFilterActive && userLocation && filteredODPs.length <= 50 && (
             <>
-              {filteredODPs.map((odp, index) => {
-                const dist = getDistance(userLocation[0], userLocation[1], odp.LATITUDE, odp.LONGITUDE);
+              {filteredODPs.map((odp) => {
+                const lat = Number(odp.LATITUDE);
+                const lng = Number(odp.LONGITUDE);
+                if (isNaN(lat) || isNaN(lng)) return null;
+
+                const dist = getDistance(userLocation[0], userLocation[1], lat, lng);
                 return (
-                  <Polyline key={`route-${odp.ODP_NAME}-${index}`} positions={[userLocation, [odp.LATITUDE, odp.LONGITUDE]]} color="blue" weight={2} dashArray="4, 4" opacity={0.5}>
+                  <Polyline key={`route-${odp.ODP_NAME}`} positions={[userLocation, [lat, lng]]} color="blue" weight={2} dashArray="4, 4" opacity={0.5}>
                     <Tooltip permanent direction="center" className="bg-white/90 text-blue-700 font-bold text-[10px] border-none shadow-sm px-1 py-0.5 rounded">
                       {dist > 1000 ? (dist / 1000).toFixed(2) + ' km' : Math.round(dist) + ' m'}
                     </Tooltip>
@@ -300,12 +311,16 @@ export default function MapPage() {
             </>
           )}
 
-          {filteredODPs.map((odp, index) => {
+          {filteredODPs.map((odp) => {
             const status = getODPStatus(odp.OCC_2);
+            const lat = Number(odp.LATITUDE);
+            const lng = Number(odp.LONGITUDE);
+            if (isNaN(lat) || isNaN(lng)) return null;
+
             return (
               <Marker 
-                key={`${odp.ODP_NAME}-${index}`} 
-                position={[odp.LATITUDE, odp.LONGITUDE]} 
+                key={odp.ODP_NAME || `${lat}-${lng}`} 
+                position={[lat, lng]} 
                 icon={icons[status]}
                 eventHandlers={{
                   click: () => addVisitedODP(odp.ODP_NAME)
@@ -328,7 +343,7 @@ export default function MapPage() {
             );
           })}
           <MapBounds 
-            markers={filteredODPs.map(o => ({ lat: o.LATITUDE, lng: o.LONGITUDE }))} 
+            markers={filteredODPs.map(o => ({ lat: Number(o.LATITUDE), lng: Number(o.LONGITUDE) }))} 
             center={searchedCenter} 
             userLocation={userLocation}
             filterKey={filterKey}
