@@ -57,18 +57,30 @@ function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
 // Component to auto-center map
 function MapBounds({ markers, center, userLocation }: { markers: { lat: number; lng: number }[], center?: [number, number] | null, userLocation?: [number, number] | null }) {
   const map = useMap();
+  const [hasFitInitialBounds, setHasFitInitialBounds] = useState(false);
   
   useEffect(() => {
     if (center) {
       map.setView(center, 16);
-    } else if (markers.length > 0) {
+    }
+  }, [center, map]);
+
+  useEffect(() => {
+    // Only snap to user location if they explicitly request it (userLocation changes)
+    // and we don't have an active search center.
+    if (userLocation && !center) {
+      map.setView(userLocation, 14);
+    }
+  }, [userLocation, map]); // Intentional: triggers when userLocation array reference changes on "Lokasi Saya" click
+
+  useEffect(() => {
+    if (!hasFitInitialBounds && markers.length > 0) {
       const bounds = L.latLngBounds(markers.map(m => [m.lat, m.lng]));
       if (userLocation) bounds.extend(userLocation);
       map.fitBounds(bounds, { padding: [50, 50] });
-    } else if (userLocation) {
-      map.setView(userLocation, 14);
+      setHasFitInitialBounds(true);
     }
-  }, [markers, center, userLocation, map]);
+  }, [markers, userLocation, map, hasFitInitialBounds]);
 
   return null;
 }
