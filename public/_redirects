@@ -1,0 +1,5 @@
+{
+  "name": "ODP Mapper",
+  "description": "Aplikasi pemetaan Optical Distribution Point (ODP) dengan status akupansi, dashboard monitoring, dan integrasi Google Apps Script.",
+  "requestFramePermissions": ["geolocation"]
+}
