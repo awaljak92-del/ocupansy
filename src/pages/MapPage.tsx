@@ -55,9 +55,10 @@ function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
 }
 
 // Component to auto-center map
-function MapBounds({ markers, center, userLocation }: { markers: { lat: number; lng: number }[], center?: [number, number] | null, userLocation?: [number, number] | null }) {
+function MapBounds({ markers, center, userLocation, filterKey }: { markers: { lat: number; lng: number }[], center?: [number, number] | null, userLocation?: [number, number] | null, filterKey: string }) {
   const map = useMap();
   const [hasFitInitialBounds, setHasFitInitialBounds] = useState(false);
+  const [lastFilterKey, setLastFilterKey] = useState(filterKey);
   
   useEffect(() => {
     if (center) {
@@ -81,6 +82,17 @@ function MapBounds({ markers, center, userLocation }: { markers: { lat: number; 
       setHasFitInitialBounds(true);
     }
   }, [markers, userLocation, map, hasFitInitialBounds]);
+
+  // Adjust bounds when filter changes
+  useEffect(() => {
+    if (filterKey !== lastFilterKey) {
+      if (markers.length > 0 && !center) {
+        const bounds = L.latLngBounds(markers.map(m => [m.lat, m.lng]));
+        map.fitBounds(bounds, { padding: [50, 50] });
+      }
+      setLastFilterKey(filterKey);
+    }
+  }, [filterKey, lastFilterKey, markers, map, center]);
 
   return null;
 }
@@ -155,6 +167,7 @@ export default function MapPage() {
   }, [odps, filterStatus, filterKabupatenKota, filterKecamatan, filterKelurahan, searchedCenter]);
 
   const isFilterActive = filterStatus !== 'all' || filterKabupatenKota !== 'all' || filterKecamatan !== 'all' || filterKelurahan !== 'all';
+  const filterKey = `${filterStatus}-${filterKabupatenKota}-${filterKecamatan}-${filterKelurahan}`;
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -314,7 +327,12 @@ export default function MapPage() {
               </Marker>
             );
           })}
-          <MapBounds markers={filteredODPs.map(o => ({ lat: o.LATITUDE, lng: o.LONGITUDE }))} center={searchedCenter} userLocation={userLocation} />
+          <MapBounds 
+            markers={filteredODPs.map(o => ({ lat: o.LATITUDE, lng: o.LONGITUDE }))} 
+            center={searchedCenter} 
+            userLocation={userLocation}
+            filterKey={filterKey}
+          />
         </MapContainer>
       </div>
 
