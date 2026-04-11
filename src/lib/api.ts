@@ -21,17 +21,25 @@ export interface ODP {
   TGL_GOLIVE: string;
   TAHUN_ODP: string | number;
   BULAN_ODP: string | number;
-  OCC_2: number;
+  OCC_2: string | number;
   validate_kelurahan: string;
   validate_kecamatan: string;
   validate_kabupatenkota: string;
 }
 
-export function getODPStatus(occ: number): ODPStatus {
-  if (occ === 0) return 'black';
-  if (occ < 50) return 'green';
-  if (occ < 80) return 'yellow';
-  if (occ < 100) return 'orange';
+export function getODPStatus(occ: string | number): ODPStatus {
+  if (typeof occ === 'string') {
+    const lower = occ.toLowerCase().trim();
+    if (['black', 'green', 'yellow', 'orange', 'red'].includes(lower)) {
+      return lower as ODPStatus;
+    }
+  }
+
+  const numOcc = Number(occ);
+  if (isNaN(numOcc) || numOcc === 0) return 'black';
+  if (numOcc < 50) return 'green';
+  if (numOcc < 80) return 'yellow';
+  if (numOcc < 100) return 'orange';
   return 'red';
 }
 
