@@ -111,10 +111,6 @@ export default function MapPage() {
   useEffect(() => {
     loadODPs();
     locateUser();
-    const interval = setInterval(() => {
-      loadODPs();
-    }, 30000);
-    return () => clearInterval(interval);
   }, [loadODPs]);
 
   // Extract unique values for filters
