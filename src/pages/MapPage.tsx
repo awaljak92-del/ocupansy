@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, Polyline, Circle, Tooltip } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -55,47 +55,55 @@ function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
 }
 
 // Component to auto-center map
+// markers is guaranteed to be a stable memoized reference from parent
 function MapBounds({ markers, center, userLocation, filterKey }: { markers: { lat: number; lng: number }[], center?: [number, number] | null, userLocation?: [number, number] | null, filterKey: string }) {
   const map = useMap();
-  const [hasFitInitialBounds, setHasFitInitialBounds] = useState(false);
-  const [lastFilterKey, setLastFilterKey] = useState(filterKey);
-  
+  const initialBoundsFit = useRef(false);
+  const lastFilterKey = useRef(filterKey);
+  const lastUserLocation = useRef<[number, number] | null>(null);
+
+  // Priority 1: explicit search center → zoom to it
   useEffect(() => {
     if (center) {
       map.setView(center, 16);
     }
   }, [center, map]);
 
+  // Priority 2: user explicitly pressed "Lokasi Saya" → only then pan to user
+  // We detect a genuine new location by comparing coordinates (not reference)
   useEffect(() => {
-    // Only snap to user location if they explicitly request it (userLocation changes)
-    // and we don't have an active search center.
-    if (userLocation && !center) {
+    if (!userLocation) return;
+    const prev = lastUserLocation.current;
+    const isNew = !prev || prev[0] !== userLocation[0] || prev[1] !== userLocation[1];
+    if (isNew && !center) {
       map.setView(userLocation, 14);
     }
-  }, [userLocation, map]); // Intentional: triggers when userLocation array reference changes on "Lokasi Saya" click
+    lastUserLocation.current = userLocation;
+  }, [userLocation, center, map]);
 
+  // Priority 3: fit all markers on initial data load (once)
   useEffect(() => {
-    if (!hasFitInitialBounds && markers.length > 0) {
-      const bounds = L.latLngBounds(markers.map(m => [m.lat, m.lng]));
-      if (userLocation) bounds.extend(userLocation);
-      map.fitBounds(bounds, { padding: [50, 50] });
-      setHasFitInitialBounds(true);
-    }
-  }, [markers, userLocation, map, hasFitInitialBounds]);
+    if (initialBoundsFit.current) return;
+    if (markers.length === 0) return;
+    const validMarkers = markers.filter(m => !isNaN(m.lat) && !isNaN(m.lng));
+    if (validMarkers.length === 0) return;
+    const bounds = L.latLngBounds(validMarkers.map(m => [m.lat, m.lng]));
+    if (userLocation) bounds.extend(userLocation);
+    map.fitBounds(bounds, { padding: [50, 50] });
+    initialBoundsFit.current = true;
+  }, [markers, userLocation, map]);
 
-  // Adjust bounds when filter changes
+  // Priority 4: re-fit bounds when filter changes (not on search center)
   useEffect(() => {
-    if (filterKey !== lastFilterKey) {
-      if (markers.length > 0 && !center) {
-        const validMarkers = markers.filter(m => !isNaN(Number(m.lat)) && !isNaN(Number(m.lng)));
-        if (validMarkers.length > 0) {
-          const bounds = L.latLngBounds(validMarkers.map(m => [Number(m.lat), Number(m.lng)]));
-          map.fitBounds(bounds, { padding: [50, 50] });
-        }
-      }
-      setLastFilterKey(filterKey);
-    }
-  }, [filterKey, lastFilterKey, markers, map, center]);
+    if (filterKey === lastFilterKey.current) return;
+    lastFilterKey.current = filterKey;
+    if (center) return; // search center takes priority
+    if (markers.length === 0) return;
+    const validMarkers = markers.filter(m => !isNaN(m.lat) && !isNaN(m.lng));
+    if (validMarkers.length === 0) return;
+    const bounds = L.latLngBounds(validMarkers.map(m => [m.lat, m.lng]));
+    map.fitBounds(bounds, { padding: [50, 50] });
+  }, [filterKey, markers, center, map]);
 
   return null;
 }
@@ -110,7 +118,10 @@ export default function MapPage() {
 
   const [showFilters, setShowFilters] = useState(false);
   const [searchInput, setSearchInput] = useState('');
+  // searchedCenter: titik koordinat pusat pencarian (aktif radius 250m + polyline)
   const [searchedCenter, setSearchedCenter] = useState<[number, number] | null>(null);
+  // namedCenter: titik ODP yang dicari by name (hanya centering, tanpa radius/polyline)
+  const [namedCenter, setNamedCenter] = useState<[number, number] | null>(null);
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
 
   const locateUser = () => {
@@ -125,7 +136,8 @@ export default function MapPage() {
 
   useEffect(() => {
     loadODPs();
-    locateUser();
+    // Jangan auto-locateUser saat mount — hanya saat tombol ditekan
+    // agar peta tidak lompat ke lokasi user setiap refresh
   }, [loadODPs]);
 
   // Extract unique values for filters
@@ -150,9 +162,14 @@ export default function MapPage() {
     return Array.from(new Set(filtered.map(o => o.validate_kelurahan))).filter(Boolean);
   }, [odps, filterKabupatenKota, filterKecamatan]);
 
-  // Filter the data
+  // Filter the data — hanya status+lokasi, tanpa radius (radius hanya untuk coordinate search)
   const filteredODPs = useMemo(() => {
-    let result = odps.filter(odp => {
+    const result = odps.filter(odp => {
+      const lat = Number(odp.LATITUDE);
+      const lng = Number(odp.LONGITUDE);
+      // Buang data yang koordinatnya tidak valid
+      if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) return false;
+
       const status = getODPStatus(odp.OCC_2);
       if (filterStatus !== 'all' && status !== filterStatus) return false;
       if (filterKabupatenKota !== 'all' && odp.validate_kabupatenkota !== filterKabupatenKota) return false;
@@ -160,40 +177,53 @@ export default function MapPage() {
       if (filterKelurahan !== 'all' && odp.validate_kelurahan !== filterKelurahan) return false;
       return true;
     });
-
-    if (searchedCenter) {
-      // If radius search is active, only show ODPs within 250m
-      result = result.filter(odp => getDistance(searchedCenter[0], searchedCenter[1], Number(odp.LATITUDE), Number(odp.LONGITUDE)) <= 250);
-    }
-
     return result;
-  }, [odps, filterStatus, filterKabupatenKota, filterKecamatan, filterKelurahan, searchedCenter]);
+  }, [odps, filterStatus, filterKabupatenKota, filterKecamatan, filterKelurahan]);
+
+  // ODPs dalam radius 250m dari searchedCenter (hanya untuk coordinate search)
+  const radiusODPs = useMemo(() => {
+    if (!searchedCenter) return [];
+    return filteredODPs.filter(odp =>
+      getDistance(searchedCenter[0], searchedCenter[1], Number(odp.LATITUDE), Number(odp.LONGITUDE)) <= 250
+    );
+  }, [filteredODPs, searchedCenter]);
 
   const isFilterActive = filterStatus !== 'all' || filterKabupatenKota !== 'all' || filterKecamatan !== 'all' || filterKelurahan !== 'all';
   const filterKey = `${filterStatus}-${filterKabupatenKota}-${filterKecamatan}-${filterKelurahan}`;
+
+  // Memoize markers array agar referensi stabil → MapBounds tidak trigger useEffect berulang
+  const markerPositions = useMemo(
+    () => filteredODPs.map(o => ({ lat: Number(o.LATITUDE), lng: Number(o.LONGITUDE) })),
+    [filteredODPs]
+  );
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (!searchInput.trim()) {
       setSearchedCenter(null);
+      setNamedCenter(null);
       return;
     }
 
     addSearchHistory(searchInput);
 
-    // Check if it's coordinates (e.g., "-6.200, 106.816")
+    // Jika input berupa koordinat (mis. "-6.200, 106.816") → aktifkan radius + polyline jarak
     const coordMatch = searchInput.match(/^(-?\d+(\.\d+)?),\s*(-?\d+(\.\d+)?)$/);
     if (coordMatch) {
       const lat = parseFloat(coordMatch[1]);
       const lng = parseFloat(coordMatch[3]);
-      setSearchedCenter([lat, lng]);
+      setSearchedCenter([lat, lng]); // mode koordinat: radius aktif
+      setNamedCenter(null);
       return;
     }
 
-    // Search by ODP Name
+    // Jika input adalah nama ODP → hanya center ke ODP, tanpa radius/polyline jarak
     const found = odps.find(o => o.ODP_NAME.toLowerCase().includes(searchInput.toLowerCase()));
     if (found) {
-      setSearchedCenter([Number(found.LATITUDE), Number(found.LONGITUDE)]);
+      const lat = Number(found.LATITUDE);
+      const lng = Number(found.LONGITUDE);
+      setNamedCenter([lat, lng]); // mode nama: hanya pindah view, tidak radius
+      setSearchedCenter(null);
       addVisitedODP(found.ODP_NAME);
     } else {
       alert("ODP tidak ditemukan");
@@ -203,7 +233,11 @@ export default function MapPage() {
   const clearSearch = () => {
     setSearchInput('');
     setSearchedCenter(null);
+    setNamedCenter(null);
   };
+
+  // Center aktif = koordinat (radius mode) atau nama ODP (hanya center)
+  const activeCenter = searchedCenter ?? namedCenter;
 
   return (
     <div className="relative h-full w-full flex flex-col">
@@ -248,19 +282,17 @@ export default function MapPage() {
             </Marker>
           )}
 
-          {/* Routes when SEARCH is active */}
+          {/* === MODE KOORDINAT: radius 250m + polyline jarak === */}
           {searchedCenter && (
             <>
               <Circle center={searchedCenter} radius={250} pathOptions={{ color: 'red', fillColor: 'red', fillOpacity: 0.1 }} />
 
-              {/* Marker for searched coordinate if it's not an exact ODP match */}
-              {!odps.find(o => Number(o.LATITUDE) === searchedCenter[0] && Number(o.LONGITUDE) === searchedCenter[1]) && (
-                <Marker position={searchedCenter} icon={L.divIcon({ className: 'bg-red-600 w-3 h-3 rounded-full border-2 border-white shadow-md', iconSize: [12, 12] })}>
-                  <Popup>Titik Pencarian</Popup>
-                </Marker>
-              )}
+              {/* Marker titik koordinat pencarian */}
+              <Marker position={searchedCenter} icon={L.divIcon({ className: '', html: '<div style="background:#dc2626;width:12px;height:12px;border-radius:50%;border:2px solid white;box-shadow:0 0 4px rgba(0,0,0,0.5)"></div>', iconSize: [12, 12], iconAnchor: [6, 6] })}>
+                <Popup>Titik Pencarian</Popup>
+              </Marker>
 
-              {/* Route from User to Searched Center */}
+              {/* Garis dari User ke titik pencarian */}
               {userLocation && (
                 <Polyline positions={[userLocation, searchedCenter]} color="blue" weight={3} dashArray="5, 5">
                   <Tooltip permanent direction="center" className="bg-white/90 text-blue-700 font-bold text-xs border-none shadow-sm px-1 py-0.5 rounded">
@@ -272,14 +304,12 @@ export default function MapPage() {
                 </Polyline>
               )}
 
-              {/* Routes from Searched Center to Alternative ODPs */}
-              {filteredODPs.map((odp) => {
+              {/* Garis dari titik pencarian ke ODP dalam radius 250m */}
+              {radiusODPs.map((odp) => {
                 const lat = Number(odp.LATITUDE);
                 const lng = Number(odp.LONGITUDE);
-                if (isNaN(lat) || isNaN(lng)) return null;
-
                 const dist = getDistance(searchedCenter[0], searchedCenter[1], lat, lng);
-                if (dist < 1) return null; // Skip if it's the exact same point
+                if (dist < 1) return null;
                 return (
                   <Polyline key={`alt-${odp.ODP_NAME}`} positions={[searchedCenter, [lat, lng]]} color="red" weight={2} dashArray="4, 4" opacity={0.6}>
                     <Tooltip permanent direction="center" className="bg-white/90 text-red-600 font-bold text-[10px] border-none shadow-sm px-1 py-0.5 rounded">
@@ -291,14 +321,13 @@ export default function MapPage() {
             </>
           )}
 
-          {/* Routes when FILTER is active (but NO search) */}
-          {!searchedCenter && isFilterActive && userLocation && filteredODPs.length <= 50 && (
+          {/* === MODE FILTER (tanpa pencarian aktif): polyline jarak ke user === */}
+          {/* Hanya tampil jika filter aktif, user location ada, ODP sedikit (≤50), dan TIDAK ada pencarian */}
+          {!searchedCenter && !namedCenter && isFilterActive && userLocation && filteredODPs.length <= 50 && (
             <>
               {filteredODPs.map((odp) => {
                 const lat = Number(odp.LATITUDE);
                 const lng = Number(odp.LONGITUDE);
-                if (isNaN(lat) || isNaN(lng)) return null;
-
                 const dist = getDistance(userLocation[0], userLocation[1], lat, lng);
                 return (
                   <Polyline key={`route-${odp.ODP_NAME}`} positions={[userLocation, [lat, lng]]} color="blue" weight={2} dashArray="4, 4" opacity={0.5}>
@@ -311,11 +340,11 @@ export default function MapPage() {
             </>
           )}
 
+          {/* Render semua ODP yang terfilter — koordinat sudah valid (difilter di filteredODPs) */}
           {filteredODPs.map((odp) => {
             const status = getODPStatus(odp.OCC_2);
             const lat = Number(odp.LATITUDE);
             const lng = Number(odp.LONGITUDE);
-            if (isNaN(lat) || isNaN(lng)) return null;
 
             return (
               <Marker 
@@ -342,9 +371,10 @@ export default function MapPage() {
               </Marker>
             );
           })}
+          {/* MapBounds menerima markerPositions yang sudah di-memoize → stabil */}
           <MapBounds 
-            markers={filteredODPs.map(o => ({ lat: Number(o.LATITUDE), lng: Number(o.LONGITUDE) }))} 
-            center={searchedCenter} 
+            markers={markerPositions}
+            center={activeCenter} 
             userLocation={userLocation}
             filterKey={filterKey}
           />
