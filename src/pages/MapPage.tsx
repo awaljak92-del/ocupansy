@@ -67,18 +67,24 @@ function MapBounds({ markers, center, userLocation, filterKey }: { markers: { la
   }, [center, map]);
 
   useEffect(() => {
-    // Only snap to user location if they explicitly request it (userLocation changes)
-    // and we don't have an active search center.
     if (userLocation && !center) {
       map.setView(userLocation, 14);
     }
-  }, [userLocation, map]); // Intentional: triggers when userLocation array reference changes on "Lokasi Saya" click
+  }, [userLocation, map]);
 
   useEffect(() => {
     if (!hasFitInitialBounds && markers.length > 0) {
-      const bounds = L.latLngBounds(markers.map(m => [m.lat, m.lng]));
-      if (userLocation) bounds.extend(userLocation);
-      map.fitBounds(bounds, { padding: [50, 50] });
+      try {
+        const validMarkers = markers.filter(m => isFinite(m.lat) && isFinite(m.lng) && m.lat !== 0 && m.lng !== 0);
+        if (validMarkers.length === 0) return;
+        const bounds = L.latLngBounds(validMarkers.map(m => [m.lat, m.lng]));
+        if (bounds.isValid()) {
+          if (userLocation) bounds.extend(userLocation);
+          map.fitBounds(bounds, { padding: [50, 50] });
+        }
+      } catch (e) {
+        console.error('[MapBounds] fitBounds initial error:', e);
+      }
       setHasFitInitialBounds(true);
     }
   }, [markers, userLocation, map, hasFitInitialBounds]);
@@ -87,10 +93,16 @@ function MapBounds({ markers, center, userLocation, filterKey }: { markers: { la
   useEffect(() => {
     if (filterKey !== lastFilterKey) {
       if (markers.length > 0 && !center) {
-        const validMarkers = markers.filter(m => !isNaN(Number(m.lat)) && !isNaN(Number(m.lng)));
-        if (validMarkers.length > 0) {
-          const bounds = L.latLngBounds(validMarkers.map(m => [Number(m.lat), Number(m.lng)]));
-          map.fitBounds(bounds, { padding: [50, 50] });
+        try {
+          const validMarkers = markers.filter(m => isFinite(m.lat) && isFinite(m.lng) && m.lat !== 0 && m.lng !== 0);
+          if (validMarkers.length > 0) {
+            const bounds = L.latLngBounds(validMarkers.map(m => [m.lat, m.lng]));
+            if (bounds.isValid()) {
+              map.fitBounds(bounds, { padding: [50, 50] });
+            }
+          }
+        } catch (e) {
+          console.error('[MapBounds] fitBounds filter error:', e);
         }
       }
       setLastFilterKey(filterKey);
