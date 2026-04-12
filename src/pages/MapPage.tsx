@@ -217,13 +217,34 @@ export default function MapPage() {
   const isFilterActive = filterStatus !== 'all' || filterKabupatenKota !== 'all' || filterKecamatan !== 'all' || filterKelurahan !== 'all';
   const filterKey = `${filterStatus}-${filterKabupatenKota}-${filterKecamatan}-${filterKelurahan}`;
 
-  // ── Fetch road routes dari lokasi user ke setiap ODP ──────────────────────
+  // ── Titik asal pengukuran rute ─────────────────────────────────────────────
+  // Saat pencarian aktif:
+  //   → Jika user berada di area (dalam radius) → ukur dari lokasi user
+  //   → Jika user di luar area → ukur dari titik pencarian
+  // Tanpa pencarian: ukur dari lokasi user
+  const routeOrigin = useMemo<[number, number] | null>(() => {
+    if (searchedCenter) {
+      if (userLocation) {
+        const distUserToSearch = getDistance(userLocation[0], userLocation[1], searchedCenter[0], searchedCenter[1]);
+        if (distUserToSearch <= SEARCH_RADIUS) {
+          // User di area pencarian → ukur dari user
+          return userLocation;
+        }
+      }
+      // User di luar area → ukur dari titik pencarian
+      return searchedCenter;
+    }
+    // Tidak ada pencarian → ukur dari user
+    return userLocation;
+  }, [searchedCenter, userLocation]);
+
+  // ── Fetch road routes dari titik asal ke setiap ODP ───────────────────────
   // Maks 20 ODP untuk menghormati rate limit OSRM demo server
   const MAX_ROUTES = 20;
-  const shouldShowRoutes = userLocation && filteredODPs.length > 0 && filteredODPs.length <= MAX_ROUTES;
+  const shouldShowRoutes = routeOrigin && filteredODPs.length > 0 && filteredODPs.length <= MAX_ROUTES;
 
   useEffect(() => {
-    if (!shouldShowRoutes || !userLocation) {
+    if (!shouldShowRoutes || !routeOrigin) {
       setRoadRoutes(new Map());
       return;
     }
@@ -245,7 +266,7 @@ export default function MapPage() {
       }));
 
     getRoutesToMany(
-      userLocation[0], userLocation[1],
+      routeOrigin[0], routeOrigin[1],
       destinations,
       (done, total) => {
         if (routeRequestId.current === currentRequestId) {
@@ -265,7 +286,7 @@ export default function MapPage() {
         setRoutingProgress('');
       }
     });
-  }, [userLocation?.[0], userLocation?.[1], filterKey, searchedCenter?.[0], searchedCenter?.[1], filteredODPs.length]);
+  }, [routeOrigin?.[0], routeOrigin?.[1], filterKey, filteredODPs.length]);
 
   // Handler: tap di peta → set titik pencarian
   const handleMapClick = useCallback((lat: number, lng: number) => {
