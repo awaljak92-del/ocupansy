@@ -58,6 +58,15 @@ export async function fetchODPData(appScriptUrl?: string): Promise<ODP[]> {
     url.searchParams.append('action', 'getODPs');
     const response = await fetch(url.toString());
     const data = await response.json();
+    
+    // Validasi: pastikan response adalah array
+    if (!Array.isArray(data)) {
+      console.error("API response bukan array:", data);
+      // Jika data dibungkus dalam object (mis. { data: [...] }), coba unwrap
+      if (data && Array.isArray(data.data)) return data.data as ODP[];
+      if (data && Array.isArray(data.result)) return data.result as ODP[];
+      return [];
+    }
     return data as ODP[];
   } catch (error) {
     console.error("Failed to fetch ODPs from AppScript", error);
