@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap, Polyline, Circle, Tooltip } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, Polyline, Circle, Tooltip } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useStore } from '../store';
@@ -54,6 +54,9 @@ function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   return R * c;
 }
+
+// Radius pencarian (meter)
+const SEARCH_RADIUS = 250;
 
 // Component to auto-center map
 function MapBounds({ markers, center, userLocation, filterKey }: { markers: { lat: number; lng: number }[], center?: [number, number] | null, userLocation?: [number, number] | null, filterKey: string }) {
@@ -110,6 +113,16 @@ function MapBounds({ markers, center, userLocation, filterKey }: { markers: { la
     }
   }, [filterKey, lastFilterKey, markers, map, center]);
 
+  return null;
+}
+
+// Component: klik peta → set titik pencarian
+function MapClickHandler({ onMapClick }: { onMapClick: (lat: number, lng: number) => void }) {
+  useMapEvents({
+    click(e) {
+      onMapClick(e.latlng.lat, e.latlng.lng);
+    },
+  });
   return null;
 }
 
@@ -170,8 +183,28 @@ export default function MapPage() {
   }, [odps, filterKabupatenKota, filterKecamatan]);
 
   // Filter the data
+  // Saat searchedCenter aktif (tap peta / cari koordinat):
+  //   → BYPASS filter status/wilayah, hanya filter berdasarkan radius dari titik
+  //   → Ini agar ODP di sekitar titik selalu tampil tidak peduli filter apa yang aktif
+  // Saat tidak ada searchedCenter:
+  //   → Filter status/wilayah berlaku normal
   const filteredODPs = useMemo(() => {
-    let result = odps.filter(odp => {
+    if (searchedCenter) {
+      // Mode pencarian: tampilkan semua ODP dalam radius, abaikan filter lain
+      return odps.filter(odp => {
+        const lat = Number(odp.LATITUDE);
+        const lng = Number(odp.LONGITUDE);
+        if (!isFinite(lat) || !isFinite(lng) || (lat === 0 && lng === 0)) return false;
+        return getDistance(searchedCenter[0], searchedCenter[1], lat, lng) <= SEARCH_RADIUS;
+      });
+    }
+
+    // Mode filter biasa
+    return odps.filter(odp => {
+      const lat = Number(odp.LATITUDE);
+      const lng = Number(odp.LONGITUDE);
+      if (!isFinite(lat) || !isFinite(lng) || (lat === 0 && lng === 0)) return false;
+
       const status = getODPStatus(odp.OCC_2);
       if (filterStatus !== 'all' && status !== filterStatus) return false;
       if (filterKabupatenKota !== 'all' && odp.validate_kabupatenkota !== filterKabupatenKota) return false;
@@ -179,13 +212,6 @@ export default function MapPage() {
       if (filterKelurahan !== 'all' && odp.validate_kelurahan !== filterKelurahan) return false;
       return true;
     });
-
-    if (searchedCenter) {
-      // If radius search is active, only show ODPs within 250m
-      result = result.filter(odp => getDistance(searchedCenter[0], searchedCenter[1], Number(odp.LATITUDE), Number(odp.LONGITUDE)) <= 250);
-    }
-
-    return result;
   }, [odps, filterStatus, filterKabupatenKota, filterKecamatan, filterKelurahan, searchedCenter]);
 
   const isFilterActive = filterStatus !== 'all' || filterKabupatenKota !== 'all' || filterKecamatan !== 'all' || filterKelurahan !== 'all';
@@ -240,6 +266,12 @@ export default function MapPage() {
       }
     });
   }, [userLocation?.[0], userLocation?.[1], filterKey, searchedCenter?.[0], searchedCenter?.[1], filteredODPs.length]);
+
+  // Handler: tap di peta → set titik pencarian
+  const handleMapClick = useCallback((lat: number, lng: number) => {
+    setSearchedCenter([lat, lng]);
+    setSearchInput(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+  }, []);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -310,22 +342,33 @@ export default function MapPage() {
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
 
+          {/* Tap peta → set titik pencarian */}
+          <MapClickHandler onMapClick={handleMapClick} />
+
           {/* User Location Marker */}
           {userLocation && (
-            <Marker position={userLocation} icon={L.divIcon({ className: 'bg-blue-500 w-4 h-4 rounded-full border-2 border-white shadow-lg', iconSize: [16, 16] })}>
+            <Marker position={userLocation} icon={L.divIcon({ className: '', html: '<div style="background:#3b82f6;width:16px;height:16px;border-radius:50%;border:3px solid white;box-shadow:0 0 8px rgba(59,130,246,0.6)"></div>', iconSize: [16, 16], iconAnchor: [8, 8] })}>
               <Popup>Lokasi Anda</Popup>
             </Marker>
           )}
 
-          {/* Lingkaran radius 250m saat pencarian koordinat aktif */}
+          {/* Lingkaran radius + marker titik pencarian */}
           {searchedCenter && (
             <>
-              <Circle center={searchedCenter} radius={250} pathOptions={{ color: 'red', fillColor: 'red', fillOpacity: 0.1 }} />
-              {!odps.find(o => Number(o.LATITUDE) === searchedCenter[0] && Number(o.LONGITUDE) === searchedCenter[1]) && (
-                <Marker position={searchedCenter} icon={L.divIcon({ className: '', html: '<div style="background:#dc2626;width:12px;height:12px;border-radius:50%;border:2px solid white;box-shadow:0 0 4px rgba(0,0,0,0.5)"></div>', iconSize: [12, 12], iconAnchor: [6, 6] })}>
-                  <Popup>Titik Pencarian</Popup>
-                </Marker>
-              )}
+              <Circle center={searchedCenter} radius={SEARCH_RADIUS} pathOptions={{ color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.08, weight: 2 }} />
+              <Marker position={searchedCenter} icon={L.divIcon({ className: '', html: '<div style="background:#dc2626;width:14px;height:14px;border-radius:50%;border:2px solid white;box-shadow:0 0 6px rgba(220,38,38,0.6)"></div>', iconSize: [14, 14], iconAnchor: [7, 7] })}>
+                <Popup>
+                  <div>
+                    <strong>Titik Pencarian</strong><br/>
+                    <span style={{fontSize:'11px',color:'#666'}}>
+                      {searchedCenter[0].toFixed(6)}, {searchedCenter[1].toFixed(6)}
+                    </span><br/>
+                    <span style={{fontSize:'11px'}}>
+                      {filteredODPs.length} ODP dalam radius {SEARCH_RADIUS}m
+                    </span>
+                  </div>
+                </Popup>
+              </Marker>
             </>
           )}
 
