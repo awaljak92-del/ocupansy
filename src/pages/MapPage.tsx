@@ -1,10 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, Polyline, Circle, Tooltip } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useStore } from '../store';
-import { Filter, RefreshCw, Search, X, LocateFixed } from 'lucide-react';
+import { Filter, RefreshCw, Search, X, LocateFixed, Loader2 } from 'lucide-react';
 import { getODPStatus } from '../lib/api';
+import { getRoutesToMany, formatDistance, formatDuration, type RouteResult } from '../lib/routing';
 
 // Fix Leaflet default icon issue
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -125,6 +126,12 @@ export default function MapPage() {
   const [searchedCenter, setSearchedCenter] = useState<[number, number] | null>(null);
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
 
+  // Road routing state
+  const [roadRoutes, setRoadRoutes] = useState<Map<string, RouteResult>>(new Map());
+  const [isRoutingLoading, setIsRoutingLoading] = useState(false);
+  const [routingProgress, setRoutingProgress] = useState('');
+  const routeRequestId = useRef(0); // untuk membatalkan request lama
+
   const locateUser = () => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -183,6 +190,56 @@ export default function MapPage() {
 
   const isFilterActive = filterStatus !== 'all' || filterKabupatenKota !== 'all' || filterKecamatan !== 'all' || filterKelurahan !== 'all';
   const filterKey = `${filterStatus}-${filterKabupatenKota}-${filterKecamatan}-${filterKelurahan}`;
+
+  // ── Fetch road routes dari lokasi user ke setiap ODP ──────────────────────
+  // Maks 20 ODP untuk menghormati rate limit OSRM demo server
+  const MAX_ROUTES = 20;
+  const shouldShowRoutes = userLocation && filteredODPs.length > 0 && filteredODPs.length <= MAX_ROUTES;
+
+  useEffect(() => {
+    if (!shouldShowRoutes || !userLocation) {
+      setRoadRoutes(new Map());
+      return;
+    }
+
+    const currentRequestId = ++routeRequestId.current;
+    setIsRoutingLoading(true);
+    setRoutingProgress(`Menghitung rute 0/${filteredODPs.length}...`);
+
+    const destinations = filteredODPs
+      .filter(o => {
+        const lat = Number(o.LATITUDE);
+        const lng = Number(o.LONGITUDE);
+        return isFinite(lat) && isFinite(lng) && lat !== 0 && lng !== 0;
+      })
+      .map(o => ({
+        lat: Number(o.LATITUDE),
+        lng: Number(o.LONGITUDE),
+        key: o.ODP_NAME,
+      }));
+
+    getRoutesToMany(
+      userLocation[0], userLocation[1],
+      destinations,
+      (done, total) => {
+        if (routeRequestId.current === currentRequestId) {
+          setRoutingProgress(`Menghitung rute ${done}/${total}...`);
+        }
+      }
+    ).then((routes) => {
+      // Hanya set jika ini masih request yang aktif (belum dibatalkan)
+      if (routeRequestId.current === currentRequestId) {
+        setRoadRoutes(routes);
+        setIsRoutingLoading(false);
+        setRoutingProgress('');
+      }
+    }).catch(() => {
+      if (routeRequestId.current === currentRequestId) {
+        setIsRoutingLoading(false);
+        setRoutingProgress('');
+      }
+    });
+  }, [userLocation?.[0], userLocation?.[1], filterKey, searchedCenter?.[0], searchedCenter?.[1], filteredODPs.length]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -260,74 +317,48 @@ export default function MapPage() {
             </Marker>
           )}
 
-          {/* Routes when SEARCH is active */}
+          {/* Lingkaran radius 250m saat pencarian koordinat aktif */}
           {searchedCenter && (
             <>
               <Circle center={searchedCenter} radius={250} pathOptions={{ color: 'red', fillColor: 'red', fillOpacity: 0.1 }} />
-
-              {/* Marker for searched coordinate if it's not an exact ODP match */}
               {!odps.find(o => Number(o.LATITUDE) === searchedCenter[0] && Number(o.LONGITUDE) === searchedCenter[1]) && (
-                <Marker position={searchedCenter} icon={L.divIcon({ className: 'bg-red-600 w-3 h-3 rounded-full border-2 border-white shadow-md', iconSize: [12, 12] })}>
+                <Marker position={searchedCenter} icon={L.divIcon({ className: '', html: '<div style="background:#dc2626;width:12px;height:12px;border-radius:50%;border:2px solid white;box-shadow:0 0 4px rgba(0,0,0,0.5)"></div>', iconSize: [12, 12], iconAnchor: [6, 6] })}>
                   <Popup>Titik Pencarian</Popup>
                 </Marker>
               )}
-
-              {/* Route from User to Searched Center */}
-              {userLocation && (
-                <Polyline positions={[userLocation, searchedCenter]} color="blue" weight={3} dashArray="5, 5">
-                  <Tooltip permanent direction="center" className="bg-white/90 text-blue-700 font-bold text-xs border-none shadow-sm px-1 py-0.5 rounded">
-                    {(() => {
-                      const dist = getDistance(userLocation[0], userLocation[1], searchedCenter[0], searchedCenter[1]);
-                      return dist > 1000 ? (dist / 1000).toFixed(2) + ' km' : Math.round(dist) + ' m';
-                    })()}
-                  </Tooltip>
-                </Polyline>
-              )}
-
-              {/* Routes from Searched Center to Alternative ODPs */}
-              {filteredODPs.map((odp) => {
-                const lat = Number(odp.LATITUDE);
-                const lng = Number(odp.LONGITUDE);
-                if (isNaN(lat) || isNaN(lng)) return null;
-
-                const dist = getDistance(searchedCenter[0], searchedCenter[1], lat, lng);
-                if (dist < 1) return null; // Skip if it's the exact same point
-                return (
-                  <Polyline key={`alt-${odp.ODP_NAME}`} positions={[searchedCenter, [lat, lng]]} color="red" weight={2} dashArray="4, 4" opacity={0.6}>
-                    <Tooltip permanent direction="center" className="bg-white/90 text-red-600 font-bold text-[10px] border-none shadow-sm px-1 py-0.5 rounded">
-                      {Math.round(dist)} m
-                    </Tooltip>
-                  </Polyline>
-                );
-              })}
             </>
           )}
 
-          {/* Routes when FILTER is active (but NO search) */}
-          {!searchedCenter && isFilterActive && userLocation && filteredODPs.length <= 50 && (
-            <>
-              {filteredODPs.map((odp) => {
-                const lat = Number(odp.LATITUDE);
-                const lng = Number(odp.LONGITUDE);
-                if (isNaN(lat) || isNaN(lng)) return null;
+          {/* === RUTE JALAN dari lokasi user ke setiap ODP (mengikuti jalan) === */}
+          {shouldShowRoutes && filteredODPs.map((odp) => {
+            const route = roadRoutes.get(odp.ODP_NAME);
+            if (!route) return null; // belum dimuat atau gagal
+            return (
+              <Polyline
+                key={`road-${odp.ODP_NAME}`}
+                positions={route.coordinates}
+                color="#2563eb"
+                weight={3}
+                opacity={0.7}
+              >
+                <Tooltip
+                  permanent
+                  direction="center"
+                  className="bg-white/90 text-blue-700 font-bold text-[10px] border-none shadow-sm px-1 py-0.5 rounded"
+                >
+                  {formatDistance(route.distance)} · {formatDuration(route.duration)}
+                </Tooltip>
+              </Polyline>
+            );
+          })}
 
-                const dist = getDistance(userLocation[0], userLocation[1], lat, lng);
-                return (
-                  <Polyline key={`route-${odp.ODP_NAME}`} positions={[userLocation, [lat, lng]]} color="blue" weight={2} dashArray="4, 4" opacity={0.5}>
-                    <Tooltip permanent direction="center" className="bg-white/90 text-blue-700 font-bold text-[10px] border-none shadow-sm px-1 py-0.5 rounded">
-                      {dist > 1000 ? (dist / 1000).toFixed(2) + ' km' : Math.round(dist) + ' m'}
-                    </Tooltip>
-                  </Polyline>
-                );
-              })}
-            </>
-          )}
-
+          {/* === Marker ODP === */}
           {filteredODPs.map((odp) => {
             const status = getODPStatus(odp.OCC_2);
             const lat = Number(odp.LATITUDE);
             const lng = Number(odp.LONGITUDE);
             if (isNaN(lat) || isNaN(lng)) return null;
+            const route = roadRoutes.get(odp.ODP_NAME);
 
             return (
               <Marker 
@@ -348,6 +379,13 @@ export default function MapPage() {
                       <p><span className="font-semibold text-gray-600">Kab/Kota:</span> {odp.validate_kabupatenkota}</p>
                       <p><span className="font-semibold text-gray-600">Kecamatan:</span> {odp.validate_kecamatan}</p>
                       <p><span className="font-semibold text-gray-600">Kelurahan:</span> {odp.validate_kelurahan}</p>
+                      {route && (
+                        <>
+                          <hr className="my-2" />
+                          <p><span className="font-semibold text-blue-600">📍 Jarak jalan:</span> {formatDistance(route.distance)}</p>
+                          <p><span className="font-semibold text-blue-600">⏱️ Estimasi:</span> {formatDuration(route.duration)}</p>
+                        </>
+                      )}
                     </div>
                   </div>
                 </Popup>
@@ -462,6 +500,17 @@ export default function MapPage() {
               Tutup
             </button>
           </div>
+          {filteredODPs.length > MAX_ROUTES && (
+            <p className="text-[10px] text-orange-500 mt-2">⚠️ Rute jalan hanya ditampilkan untuk maks {MAX_ROUTES} ODP. Filter lebih spesifik untuk melihat rute.</p>
+          )}
+        </div>
+      )}
+
+      {/* Loading indicator routing */}
+      {isRoutingLoading && (
+        <div className="absolute bottom-20 left-4 right-4 z-[1000] bg-white/95 rounded-lg shadow-lg p-3 flex items-center gap-3">
+          <Loader2 size={18} className="animate-spin text-blue-600" />
+          <span className="text-sm text-gray-600">{routingProgress}</span>
         </div>
       )}
     </div>
