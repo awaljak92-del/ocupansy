@@ -1,12 +1,12 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import React, { useEffect, useMemo, useState } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, useMap, Polyline, Circle, Tooltip } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useStore } from '../store';
-import { Filter, RefreshCw, LocateFixed } from 'lucide-react';
+import { Filter, RefreshCw, Search, X, LocateFixed } from 'lucide-react';
 import { getODPStatus } from '../lib/api';
 
-// Fix Leaflet default icon
+// Fix Leaflet default icon issue
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
@@ -14,159 +14,145 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
-const createIcon = (color: string) =>
-  new L.DivIcon({
-    className: '',
-    html: `<div style="background:${color};width:14px;height:14px;border-radius:50%;border:2px solid white;box-shadow:0 0 4px rgba(0,0,0,0.5)"></div>`,
-    iconSize: [14, 14],
-    iconAnchor: [7, 7],
+// Custom icons based on status
+const createIcon = (color: string) => {
+  return new L.DivIcon({
+    className: 'custom-icon',
+    html: `<div style="background-color: ${color}; width: 16px; height: 16px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 4px rgba(0,0,0,0.5);"></div>`,
+    iconSize: [16, 16],
+    iconAnchor: [8, 8],
   });
+};
 
-const icons: Record<string, L.DivIcon> = {
-  black:  createIcon('#111111'),
-  green:  createIcon('#22c55e'),
+const icons = {
+  black: createIcon('#000000'),
+  green: createIcon('#22c55e'),
   yellow: createIcon('#eab308'),
   orange: createIcon('#f97316'),
-  red:    createIcon('#ef4444'),
+  red: createIcon('#ef4444'),
 };
 
 const statusLabels: Record<string, string> = {
-  black:  'Black (0%)',
-  green:  'Green (<50%)',
+  black: 'Black (0%)',
+  green: 'Green (<50%)',
   yellow: 'Yellow (50-80%)',
   orange: 'Orange (80-99%)',
-  red:    'Red (100%)',
+  red: 'Red (100%)',
 };
 
-// ─── Komponen kecil untuk mengontrol posisi peta ────────────────────────────
-// react-leaflet TIDAK mendukung ref pada MapContainer →
-// satu-satunya cara akses L.Map adalah lewat useMap() di child component.
-function MapController({ positions, filterKey }: {
-  positions: [number, number][];
-  filterKey: string;
-}) {
+// Haversine distance in meters
+function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const R = 6371e3; // metres
+  const φ1 = lat1 * Math.PI/180;
+  const φ2 = lat2 * Math.PI/180;
+  const Δφ = (lat2-lat1) * Math.PI/180;
+  const Δλ = (lon2-lon1) * Math.PI/180;
+  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+            Math.cos(φ1) * Math.cos(φ2) *
+            Math.sin(Δλ/2) * Math.sin(Δλ/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+// Component to auto-center map
+function MapBounds({ markers, center, userLocation, filterKey }: { markers: { lat: number; lng: number }[], center?: [number, number] | null, userLocation?: [number, number] | null, filterKey: string }) {
   const map = useMap();
-  const lastFilterKey = useRef('__initial__');
-  const initialDone = useRef(false);
-
-  // [A] Fit ke semua marker saat data pertama kali muat
+  const [hasFitInitialBounds, setHasFitInitialBounds] = useState(false);
+  const [lastFilterKey, setLastFilterKey] = useState(filterKey);
+  
   useEffect(() => {
-    if (initialDone.current) return;
-    if (positions.length === 0) return;
-
-    const bounds = L.latLngBounds(positions);
-    if (bounds.isValid()) {
-      console.log('[MapController] Initial fitBounds, markers:', positions.length);
-      map.fitBounds(bounds, { padding: [50, 50] });
-      initialDone.current = true;
+    if (center) {
+      map.setView(center, 16);
     }
-  }, [positions, map]);
+  }, [center, map]);
 
-  // [B] Fit ke marker hasil filter saat filterKey berubah
   useEffect(() => {
-    if (filterKey === lastFilterKey.current) return;
-    lastFilterKey.current = filterKey;
-
-    if (positions.length === 0) {
-      console.log('[MapController] Filter changed, 0 markers');
-      return;
+    // Only snap to user location if they explicitly request it (userLocation changes)
+    // and we don't have an active search center.
+    if (userLocation && !center) {
+      map.setView(userLocation, 14);
     }
+  }, [userLocation, map]); // Intentional: triggers when userLocation array reference changes on "Lokasi Saya" click
 
-    const bounds = L.latLngBounds(positions);
-    if (bounds.isValid()) {
-      console.log('[MapController] Filter changed → fitBounds, markers:', positions.length);
+  useEffect(() => {
+    if (!hasFitInitialBounds && markers.length > 0) {
+      const bounds = L.latLngBounds(markers.map(m => [m.lat, m.lng]));
+      if (userLocation) bounds.extend(userLocation);
       map.fitBounds(bounds, { padding: [50, 50] });
+      setHasFitInitialBounds(true);
     }
-  }, [filterKey, positions, map]);
+  }, [markers, userLocation, map, hasFitInitialBounds]);
+
+  // Adjust bounds when filter changes
+  useEffect(() => {
+    if (filterKey !== lastFilterKey) {
+      if (markers.length > 0 && !center) {
+        const validMarkers = markers.filter(m => !isNaN(Number(m.lat)) && !isNaN(Number(m.lng)));
+        if (validMarkers.length > 0) {
+          const bounds = L.latLngBounds(validMarkers.map(m => [Number(m.lat), Number(m.lng)]));
+          map.fitBounds(bounds, { padding: [50, 50] });
+        }
+      }
+      setLastFilterKey(filterKey);
+    }
+  }, [filterKey, lastFilterKey, markers, map, center]);
 
   return null;
 }
 
-// ─── Komponen untuk pan ke lokasi user ──────────────────────────────────────
-function LocateUser({ location }: { location: [number, number] | null }) {
-  const map = useMap();
-  const prevLoc = useRef('');
-
-  useEffect(() => {
-    if (!location) return;
-    const key = `${location[0]},${location[1]}`;
-    if (key === prevLoc.current) return;
-    prevLoc.current = key;
-    console.log('[LocateUser] Pan to user:', location);
-    map.setView(location, 15);
-  }, [location, map]);
-
-  return null;
-}
-
-// ─── Komponen utama ─────────────────────────────────────────────────────────
 export default function MapPage() {
-  const {
-    odps, isLoading, loadODPs,
+  const { 
+    odps, isLoading, loadODPs, 
     filterStatus, filterKabupatenKota, filterKecamatan, filterKelurahan,
     setFilterStatus, setFilterKabupatenKota, setFilterKecamatan, setFilterKelurahan,
+    addSearchHistory, addVisitedODP
   } = useStore();
 
   const [showFilters, setShowFilters] = useState(false);
+  const [searchInput, setSearchInput] = useState('');
+  const [searchedCenter, setSearchedCenter] = useState<[number, number] | null>(null);
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
 
-  // Ambil lokasi user saat pertama kali buka halaman
-  useEffect(() => {
-    loadODPs();
+  const locateUser = () => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          console.log('[MapPage] Got user location:', pos.coords.latitude, pos.coords.longitude);
-          setUserLocation([pos.coords.latitude, pos.coords.longitude]);
-        },
-        (err) => console.error('[MapPage] Geolocation error:', err),
+        (pos) => setUserLocation([pos.coords.latitude, pos.coords.longitude]),
+        (err) => console.error("Geolocation error:", err),
         { enableHighAccuracy: true }
       );
     }
+  };
+
+  useEffect(() => {
+    loadODPs();
+    locateUser();
   }, [loadODPs]);
 
-  // Data debug: log jumlah ODP saat dimuat
-  useEffect(() => {
-    console.log('[MapPage] Total ODPs loaded:', odps.length);
-    if (odps.length > 0) {
-      const sample = odps[0];
-      console.log('[MapPage] Sample ODP:', {
-        name: sample.ODP_NAME,
-        lat: sample.LATITUDE, latType: typeof sample.LATITUDE,
-        lng: sample.LONGITUDE, lngType: typeof sample.LONGITUDE,
-        occ: sample.OCC_2,
-        kab: sample.validate_kabupatenkota,
-      });
-    }
-  }, [odps]);
-
-  // ── Dropdown filter options ─────────────────────────────────────────────
-  const kabupatens = useMemo(() =>
-    Array.from(new Set(odps.map(o => o.validate_kabupatenkota))).filter(Boolean).sort(),
-    [odps]
-  );
-
+  // Extract unique values for filters
+  const kabupatens = useMemo(() => Array.from(new Set(odps.map(o => o.validate_kabupatenkota))).filter(Boolean), [odps]);
+  
   const kecamatans = useMemo(() => {
-    const base = filterKabupatenKota !== 'all'
-      ? odps.filter(o => o.validate_kabupatenkota === filterKabupatenKota)
-      : odps;
-    return Array.from(new Set(base.map(o => o.validate_kecamatan))).filter(Boolean).sort();
+    let filtered = odps;
+    if (filterKabupatenKota !== 'all') {
+      filtered = filtered.filter(o => o.validate_kabupatenkota === filterKabupatenKota);
+    }
+    return Array.from(new Set(filtered.map(o => o.validate_kecamatan))).filter(Boolean);
   }, [odps, filterKabupatenKota]);
 
   const kelurahans = useMemo(() => {
-    let base = odps;
-    if (filterKabupatenKota !== 'all') base = base.filter(o => o.validate_kabupatenkota === filterKabupatenKota);
-    if (filterKecamatan !== 'all') base = base.filter(o => o.validate_kecamatan === filterKecamatan);
-    return Array.from(new Set(base.map(o => o.validate_kelurahan))).filter(Boolean).sort();
+    let filtered = odps;
+    if (filterKabupatenKota !== 'all') {
+      filtered = filtered.filter(o => o.validate_kabupatenkota === filterKabupatenKota);
+    }
+    if (filterKecamatan !== 'all') {
+      filtered = filtered.filter(o => o.validate_kecamatan === filterKecamatan);
+    }
+    return Array.from(new Set(filtered.map(o => o.validate_kelurahan))).filter(Boolean);
   }, [odps, filterKabupatenKota, filterKecamatan]);
 
-  // ── Data terfilter ────────────────────────────────────────────────────────
+  // Filter the data
   const filteredODPs = useMemo(() => {
-    const result = odps.filter(odp => {
-      const lat = Number(odp.LATITUDE);
-      const lng = Number(odp.LONGITUDE);
-      if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) return false;
-
+    let result = odps.filter(odp => {
       const status = getODPStatus(odp.OCC_2);
       if (filterStatus !== 'all' && status !== filterStatus) return false;
       if (filterKabupatenKota !== 'all' && odp.validate_kabupatenkota !== filterKabupatenKota) return false;
@@ -174,103 +160,215 @@ export default function MapPage() {
       if (filterKelurahan !== 'all' && odp.validate_kelurahan !== filterKelurahan) return false;
       return true;
     });
-    console.log('[MapPage] filteredODPs:', result.length);
+
+    if (searchedCenter) {
+      // If radius search is active, only show ODPs within 250m
+      result = result.filter(odp => getDistance(searchedCenter[0], searchedCenter[1], Number(odp.LATITUDE), Number(odp.LONGITUDE)) <= 250);
+    }
+
     return result;
-  }, [odps, filterStatus, filterKabupatenKota, filterKecamatan, filterKelurahan]);
+  }, [odps, filterStatus, filterKabupatenKota, filterKecamatan, filterKelurahan, searchedCenter]);
 
-  // Posisi marker — stabil (memoized)
-  const positions = useMemo<[number, number][]>(
-    () => filteredODPs.map(o => [Number(o.LATITUDE), Number(o.LONGITUDE)]),
-    [filteredODPs]
-  );
+  const isFilterActive = filterStatus !== 'all' || filterKabupatenKota !== 'all' || filterKecamatan !== 'all' || filterKelurahan !== 'all';
+  const filterKey = `${filterStatus}-${filterKabupatenKota}-${filterKecamatan}-${filterKelurahan}`;
 
-  const filterKey = `${filterStatus}|${filterKabupatenKota}|${filterKecamatan}|${filterKelurahan}`;
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!searchInput.trim()) {
+      setSearchedCenter(null);
+      return;
+    }
+
+    addSearchHistory(searchInput);
+
+    // Check if it's coordinates (e.g., "-6.200, 106.816")
+    const coordMatch = searchInput.match(/^(-?\d+(\.\d+)?),\s*(-?\d+(\.\d+)?)$/);
+    if (coordMatch) {
+      const lat = parseFloat(coordMatch[1]);
+      const lng = parseFloat(coordMatch[3]);
+      setSearchedCenter([lat, lng]);
+      return;
+    }
+
+    // Search by ODP Name
+    const found = odps.find(o => o.ODP_NAME.toLowerCase().includes(searchInput.toLowerCase()));
+    if (found) {
+      setSearchedCenter([Number(found.LATITUDE), Number(found.LONGITUDE)]);
+      addVisitedODP(found.ODP_NAME);
+    } else {
+      alert("ODP tidak ditemukan");
+    }
+  };
+
+  const clearSearch = () => {
+    setSearchInput('');
+    setSearchedCenter(null);
+  };
 
   return (
-    <div className="relative h-full w-full">
+    <div className="relative h-full w-full flex flex-col">
+      {/* Search Bar */}
+      <div className="absolute top-4 left-4 right-16 z-[1000]">
+        <form onSubmit={handleSearch} className="flex bg-white rounded-lg shadow-lg overflow-hidden">
+          <input 
+            type="text" 
+            placeholder="Cari ODP atau Koordinat (Lat, Lng)..." 
+            className="flex-1 px-4 py-3 outline-none text-sm"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+          />
+          {searchInput && (
+            <button type="button" onClick={clearSearch} className="p-3 text-gray-400 hover:text-gray-600">
+              <X size={18} />
+            </button>
+          )}
+          <button type="submit" className="bg-blue-600 text-white p-3 hover:bg-blue-700 transition-colors">
+            <Search size={20} />
+          </button>
+        </form>
+      </div>
 
-      {/* Peta */}
-      <MapContainer
-        center={[-6.2, 106.816]}
-        zoom={10}
-        style={{ height: '100%', width: '100%' }}
-        zoomControl={false}
-      >
-        <TileLayer
-          attribution='&copy; OpenStreetMap'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        />
+      {/* Map Area */}
+      <div className="flex-1 relative z-0">
+        <MapContainer 
+          center={[-6.200000, 106.816666]} 
+          zoom={12} 
+          style={{ height: '100%', width: '100%' }}
+          zoomControl={false}
+        >
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          />
 
-        {/* Controller untuk fitBounds saat filter berubah */}
-        <MapController positions={positions} filterKey={filterKey} />
-
-        {/* Controller untuk pan ke lokasi user */}
-        <LocateUser location={userLocation} />
-
-        {/* Marker lokasi user */}
-        {userLocation && (
-          <Marker
-            position={userLocation}
-            icon={L.divIcon({
-              className: '',
-              html: '<div style="background:#3b82f6;width:16px;height:16px;border-radius:50%;border:3px solid white;box-shadow:0 0 8px rgba(59,130,246,0.6)"></div>',
-              iconSize: [16, 16],
-              iconAnchor: [8, 8],
-            })}
-          >
-            <Popup>Lokasi Anda</Popup>
-          </Marker>
-        )}
-
-        {/* Marker ODP */}
-        {filteredODPs.map((odp) => {
-          const status = getODPStatus(odp.OCC_2);
-          return (
-            <Marker
-              key={odp.ODP_NAME}
-              position={[Number(odp.LATITUDE), Number(odp.LONGITUDE)]}
-              icon={icons[status]}
-            >
-              <Popup>
-                <div style={{ minWidth: 180 }}>
-                  <strong>{odp.ODP_NAME}</strong><br />
-                  Status: {status}<br />
-                  Akupansi: {odp.OCC_2}% ({odp.USED}/{odp.IS_TOTAL})<br />
-                  STO: {odp.STO}<br />
-                  {odp.validate_kabupatenkota} / {odp.validate_kecamatan} / {odp.validate_kelurahan}
-                </div>
-              </Popup>
+          {/* User Location Marker */}
+          {userLocation && (
+            <Marker position={userLocation} icon={L.divIcon({ className: 'bg-blue-500 w-4 h-4 rounded-full border-2 border-white shadow-lg', iconSize: [16, 16] })}>
+              <Popup>Lokasi Anda</Popup>
             </Marker>
-          );
-        })}
-      </MapContainer>
+          )}
 
-      {/* Tombol kanan atas */}
-      <div className="absolute top-4 right-4 z-[1000] flex flex-col gap-2">
-        <button
-          onClick={() => {
-            if (navigator.geolocation) {
-              navigator.geolocation.getCurrentPosition(
-                (pos) => setUserLocation([pos.coords.latitude, pos.coords.longitude]),
-                (err) => console.error(err),
-                { enableHighAccuracy: true }
-              );
-            }
-          }}
+          {/* Routes when SEARCH is active */}
+          {searchedCenter && (
+            <>
+              <Circle center={searchedCenter} radius={250} pathOptions={{ color: 'red', fillColor: 'red', fillOpacity: 0.1 }} />
+
+              {/* Marker for searched coordinate if it's not an exact ODP match */}
+              {!odps.find(o => Number(o.LATITUDE) === searchedCenter[0] && Number(o.LONGITUDE) === searchedCenter[1]) && (
+                <Marker position={searchedCenter} icon={L.divIcon({ className: 'bg-red-600 w-3 h-3 rounded-full border-2 border-white shadow-md', iconSize: [12, 12] })}>
+                  <Popup>Titik Pencarian</Popup>
+                </Marker>
+              )}
+
+              {/* Route from User to Searched Center */}
+              {userLocation && (
+                <Polyline positions={[userLocation, searchedCenter]} color="blue" weight={3} dashArray="5, 5">
+                  <Tooltip permanent direction="center" className="bg-white/90 text-blue-700 font-bold text-xs border-none shadow-sm px-1 py-0.5 rounded">
+                    {(() => {
+                      const dist = getDistance(userLocation[0], userLocation[1], searchedCenter[0], searchedCenter[1]);
+                      return dist > 1000 ? (dist / 1000).toFixed(2) + ' km' : Math.round(dist) + ' m';
+                    })()}
+                  </Tooltip>
+                </Polyline>
+              )}
+
+              {/* Routes from Searched Center to Alternative ODPs */}
+              {filteredODPs.map((odp) => {
+                const lat = Number(odp.LATITUDE);
+                const lng = Number(odp.LONGITUDE);
+                if (isNaN(lat) || isNaN(lng)) return null;
+
+                const dist = getDistance(searchedCenter[0], searchedCenter[1], lat, lng);
+                if (dist < 1) return null; // Skip if it's the exact same point
+                return (
+                  <Polyline key={`alt-${odp.ODP_NAME}`} positions={[searchedCenter, [lat, lng]]} color="red" weight={2} dashArray="4, 4" opacity={0.6}>
+                    <Tooltip permanent direction="center" className="bg-white/90 text-red-600 font-bold text-[10px] border-none shadow-sm px-1 py-0.5 rounded">
+                      {Math.round(dist)} m
+                    </Tooltip>
+                  </Polyline>
+                );
+              })}
+            </>
+          )}
+
+          {/* Routes when FILTER is active (but NO search) */}
+          {!searchedCenter && isFilterActive && userLocation && filteredODPs.length <= 50 && (
+            <>
+              {filteredODPs.map((odp) => {
+                const lat = Number(odp.LATITUDE);
+                const lng = Number(odp.LONGITUDE);
+                if (isNaN(lat) || isNaN(lng)) return null;
+
+                const dist = getDistance(userLocation[0], userLocation[1], lat, lng);
+                return (
+                  <Polyline key={`route-${odp.ODP_NAME}`} positions={[userLocation, [lat, lng]]} color="blue" weight={2} dashArray="4, 4" opacity={0.5}>
+                    <Tooltip permanent direction="center" className="bg-white/90 text-blue-700 font-bold text-[10px] border-none shadow-sm px-1 py-0.5 rounded">
+                      {dist > 1000 ? (dist / 1000).toFixed(2) + ' km' : Math.round(dist) + ' m'}
+                    </Tooltip>
+                  </Polyline>
+                );
+              })}
+            </>
+          )}
+
+          {filteredODPs.map((odp) => {
+            const status = getODPStatus(odp.OCC_2);
+            const lat = Number(odp.LATITUDE);
+            const lng = Number(odp.LONGITUDE);
+            if (isNaN(lat) || isNaN(lng)) return null;
+
+            return (
+              <Marker 
+                key={odp.ODP_NAME || `${lat}-${lng}`} 
+                position={[lat, lng]} 
+                icon={icons[status]}
+                eventHandlers={{
+                  click: () => addVisitedODP(odp.ODP_NAME)
+                }}
+              >
+                <Popup>
+                  <div className="p-1">
+                    <h3 className="font-bold text-lg border-b pb-1 mb-2">{odp.ODP_NAME}</h3>
+                    <div className="space-y-1 text-sm">
+                      <p><span className="font-semibold text-gray-600">Status:</span> <span className="capitalize">{status}</span></p>
+                      <p><span className="font-semibold text-gray-600">Akupansi:</span> {odp.OCC_2}% ({odp.USED}/{odp.IS_TOTAL})</p>
+                      <p><span className="font-semibold text-gray-600">STO:</span> {odp.STO}</p>
+                      <p><span className="font-semibold text-gray-600">Kab/Kota:</span> {odp.validate_kabupatenkota}</p>
+                      <p><span className="font-semibold text-gray-600">Kecamatan:</span> {odp.validate_kecamatan}</p>
+                      <p><span className="font-semibold text-gray-600">Kelurahan:</span> {odp.validate_kelurahan}</p>
+                    </div>
+                  </div>
+                </Popup>
+              </Marker>
+            );
+          })}
+          <MapBounds 
+            markers={filteredODPs.map(o => ({ lat: Number(o.LATITUDE), lng: Number(o.LONGITUDE) }))} 
+            center={searchedCenter} 
+            userLocation={userLocation}
+            filterKey={filterKey}
+          />
+        </MapContainer>
+      </div>
+
+      {/* Floating Controls */}
+      <div className="absolute top-20 right-4 z-[1000] flex flex-col gap-2">
+        <button 
+          onClick={() => locateUser()} 
           className="bg-white p-3 rounded-full shadow-lg text-gray-700 hover:text-blue-600 transition-colors"
           title="Lokasi Saya"
         >
           <LocateFixed size={20} />
         </button>
-        <button
-          onClick={() => loadODPs()}
+        <button 
+          onClick={() => loadODPs()} 
           className="bg-white p-3 rounded-full shadow-lg text-gray-700 hover:text-blue-600 transition-colors"
           title="Refresh Data"
         >
           <RefreshCw size={20} className={isLoading ? 'animate-spin text-blue-600' : ''} />
         </button>
-        <button
-          onClick={() => setShowFilters(!showFilters)}
+        <button 
+          onClick={() => setShowFilters(!showFilters)} 
           className={`bg-white p-3 rounded-full shadow-lg transition-colors ${showFilters ? 'text-blue-600' : 'text-gray-700'}`}
           title="Filter"
         >
@@ -278,77 +376,78 @@ export default function MapPage() {
         </button>
       </div>
 
-      {/* Panel filter */}
+      {/* Filter Panel */}
       {showFilters && (
-        <div className="absolute top-4 left-4 z-[1000] bg-white rounded-xl shadow-xl p-4 w-64 max-h-[80vh] overflow-y-auto">
+        <div className="absolute top-20 left-4 right-20 z-[1000] bg-white rounded-xl shadow-xl p-4 max-h-[70vh] overflow-y-auto">
           <h3 className="font-bold text-gray-800 mb-3">Filter ODP</h3>
-
-          <div className="space-y-3">
+          
+          <div className="space-y-4">
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
-              <select
-                value={filterStatus}
-                onChange={e => setFilterStatus(e.target.value)}
-                className="w-full border rounded p-2 text-sm bg-gray-50"
+              <label className="block text-xs font-medium text-gray-500 mb-1">Status Akupansi</label>
+              <select 
+                value={filterStatus} 
+                onChange={(e) => setFilterStatus(e.target.value)}
+                className="w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm p-2 bg-gray-50 border"
               >
                 <option value="all">Semua Status</option>
-                {Object.entries(statusLabels).map(([v, l]) => (
-                  <option key={v} value={v}>{l}</option>
+                {Object.entries(statusLabels).map(([val, label]) => (
+                  <option key={val} value={val}>{label}</option>
                 ))}
               </select>
             </div>
 
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1">Kabupaten/Kota</label>
-              <select
-                value={filterKabupatenKota}
-                onChange={e => setFilterKabupatenKota(e.target.value)}
-                className="w-full border rounded p-2 text-sm bg-gray-50"
+              <select 
+                value={filterKabupatenKota} 
+                onChange={(e) => setFilterKabupatenKota(e.target.value)}
+                className="w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm p-2 bg-gray-50 border"
               >
-                <option value="all">Semua</option>
-                {kabupatens.map(k => <option key={k} value={k}>{k}</option>)}
+                <option value="all">Semua Kabupaten/Kota</option>
+                {kabupatens.map(kab => (
+                  <option key={kab} value={kab}>{kab}</option>
+                ))}
               </select>
             </div>
 
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1">Kecamatan</label>
-              <select
-                value={filterKecamatan}
-                onChange={e => setFilterKecamatan(e.target.value)}
-                className="w-full border rounded p-2 text-sm bg-gray-50"
+              <select 
+                value={filterKecamatan} 
+                onChange={(e) => setFilterKecamatan(e.target.value)}
+                className="w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm p-2 bg-gray-50 border"
                 disabled={filterKabupatenKota === 'all'}
               >
-                <option value="all">Semua</option>
-                {kecamatans.map(k => <option key={k} value={k}>{k}</option>)}
+                <option value="all">Semua Kecamatan</option>
+                {kecamatans.map(kec => (
+                  <option key={kec} value={kec}>{kec}</option>
+                ))}
               </select>
             </div>
 
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1">Kelurahan</label>
-              <select
-                value={filterKelurahan}
-                onChange={e => setFilterKelurahan(e.target.value)}
-                className="w-full border rounded p-2 text-sm bg-gray-50"
+              <select 
+                value={filterKelurahan} 
+                onChange={(e) => setFilterKelurahan(e.target.value)}
+                className="w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm p-2 bg-gray-50 border"
                 disabled={filterKecamatan === 'all'}
               >
-                <option value="all">Semua</option>
-                {kelurahans.map(k => <option key={k} value={k}>{k}</option>)}
+                <option value="all">Semua Kelurahan</option>
+                {kelurahans.map(kel => (
+                  <option key={kel} value={kel}>{kel}</option>
+                ))}
               </select>
             </div>
           </div>
-
-          <div className="mt-4 pt-3 border-t flex justify-between items-center">
-            <span className="text-xs text-gray-500 font-medium">
-              {filteredODPs.length} ODP
-            </span>
-            <button
-              onClick={() => {
-                setFilterStatus('all');
-                setFilterKabupatenKota('all');
-              }}
-              className="text-xs text-red-500 hover:text-red-700"
+          
+          <div className="mt-4 pt-3 border-t border-gray-100 flex justify-between items-center">
+            <span className="text-xs text-gray-500">Menampilkan {filteredODPs.length} ODP</span>
+            <button 
+              onClick={() => setShowFilters(false)}
+              className="text-sm text-blue-600 font-medium"
             >
-              Reset
+              Tutup
             </button>
           </div>
         </div>
