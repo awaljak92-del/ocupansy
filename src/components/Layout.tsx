@@ -15,9 +15,9 @@ export default function Layout() {
   const showSettings = user?.role === 'owner';
 
   return (
-    <div className="flex flex-col h-screen bg-gray-50">
+    <div className="flex flex-col bg-gray-50" style={{ height: '100dvh' }}>
       {/* Top Header */}
-      <header className="bg-blue-600 text-white p-4 shadow-md flex justify-between items-center z-10">
+      <header className="bg-blue-600 text-white p-4 shadow-md flex justify-between items-center" style={{ zIndex: 2000 }}>
         <div>
           <h1 className="text-xl font-bold">ODP Mapper</h1>
           {user && <p className="text-xs text-blue-200">{user.name} ({user.role})</p>}
@@ -32,10 +32,20 @@ export default function Layout() {
         <Outlet />
       </main>
 
-      {/* Bottom Navigation */}
-      <nav className="bg-white border-t border-gray-200 flex justify-around items-center h-16 pb-2 pt-1 z-10">
+      {/* Bottom Navigation — z-index harus di atas peta (yang z-[1000]) */}
+      <nav
+        className="bg-white border-t border-gray-200 flex justify-around items-center"
+        style={{
+          zIndex: 2000,
+          minHeight: '60px',
+          paddingBottom: 'max(8px, env(safe-area-inset-bottom))',
+          paddingTop: '4px',
+          flexShrink: 0,
+        }}
+      >
         <NavLink
           to="/"
+          end
           className={({ isActive }) =>
             `flex flex-col items-center justify-center w-full h-full space-y-1 ${
               isActive ? 'text-blue-600' : 'text-gray-500 hover:text-gray-900'
