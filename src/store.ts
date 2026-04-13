@@ -1,6 +1,56 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { ODP, User, fetchODPData, fetchUsers } from './lib/api';
+import { ODP, User, fetchODPData, fetchUsers, getODPStatus } from './lib/api';
+
+export interface WeeklySnapshot {
+  weekKey: string;       // "2026-W15"
+  weekLabel: string;     // "7-13 Apr"
+  timestamp: number;
+  total: number;
+  black: number;
+  green: number;
+  yellow: number;
+  orange: number;
+  red: number;
+  avgOcc: number;        // rata-rata okupansi %
+}
+
+function getWeekKey(): string {
+  const d = new Date();
+  const yearStart = new Date(d.getFullYear(), 0, 1);
+  const weekNo = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + yearStart.getDay() + 1) / 7);
+  return `${d.getFullYear()}-W${String(weekNo).padStart(2, '0')}`;
+}
+
+function getWeekLabel(): string {
+  const d = new Date();
+  const day = d.getDay();
+  const monday = new Date(d);
+  monday.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  const months = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+  return `${monday.getDate()}-${sunday.getDate()} ${months[sunday.getMonth()]}`;
+}
+
+function buildSnapshot(odps: ODP[]): WeeklySnapshot {
+  const snap: WeeklySnapshot = {
+    weekKey: getWeekKey(),
+    weekLabel: getWeekLabel(),
+    timestamp: Date.now(),
+    total: odps.length,
+    black: 0, green: 0, yellow: 0, orange: 0, red: 0,
+    avgOcc: 0,
+  };
+  let totalOcc = 0;
+  odps.forEach(odp => {
+    const s = getODPStatus(odp.OCC_2);
+    snap[s]++;
+    totalOcc += Number(odp.OCC_2) || 0;
+  });
+  snap.avgOcc = odps.length > 0 ? Math.round(totalOcc / odps.length) : 0;
+  return snap;
+}
 
 interface AppState {
   isAuthenticated: boolean;
@@ -23,6 +73,9 @@ interface AppState {
   visitedODPs: string[];
   addSearchHistory: (query: string) => void;
   addVisitedODP: (odpName: string) => void;
+
+  // Weekly snapshots
+  weeklySnapshots: WeeklySnapshot[];
 
   // Filters
   filterStatus: string;
@@ -55,6 +108,22 @@ export const useStore = create<AppState>()(
         try {
           const data = await fetchODPData(get().appScriptUrl);
           set({ odps: data, isLoading: false });
+
+          // Simpan snapshot mingguan
+          if (data.length > 0) {
+            const snap = buildSnapshot(data);
+            const existing = get().weeklySnapshots;
+            // Update snapshot minggu ini jika sudah ada, atau tambah baru
+            const idx = existing.findIndex(s => s.weekKey === snap.weekKey);
+            let updated: WeeklySnapshot[];
+            if (idx >= 0) {
+              updated = [...existing];
+              updated[idx] = snap;
+            } else {
+              updated = [...existing, snap].slice(-12); // simpan maks 12 minggu
+            }
+            set({ weeklySnapshots: updated });
+          }
         } catch (err) {
           set({ error: 'Gagal memuat data ODP', isLoading: false });
         }
@@ -80,6 +149,8 @@ export const useStore = create<AppState>()(
         return { visitedODPs: newVisited };
       }),
 
+      weeklySnapshots: [],
+
       filterStatus: 'all',
       filterKabupatenKota: 'all',
       filterKecamatan: 'all',
@@ -96,7 +167,8 @@ export const useStore = create<AppState>()(
         user: state.user,
         appScriptUrl: state.appScriptUrl,
         searchHistory: state.searchHistory,
-        visitedODPs: state.visitedODPs
+        visitedODPs: state.visitedODPs,
+        weeklySnapshots: state.weeklySnapshots,
       }),
     }
   )
