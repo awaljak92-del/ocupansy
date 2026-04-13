@@ -183,11 +183,9 @@ export default function MapPage() {
   }, [odps, filterKabupatenKota, filterKecamatan]);
 
   // Filter the data
-  // Saat searchedCenter aktif (tap peta / cari koordinat):
-  //   → BYPASS filter status/wilayah, hanya filter berdasarkan radius dari titik
-  //   → Ini agar ODP di sekitar titik selalu tampil tidak peduli filter apa yang aktif
-  // Saat tidak ada searchedCenter:
-  //   → Filter status/wilayah berlaku normal
+  // - Tanpa aksi (tidak ada search & filter) → JANGAN tampilkan marker (kosong)
+  // - Saat searchedCenter aktif (tap peta / cari koordinat) → tampilkan ODP dalam radius
+  // - Saat filter aktif → filter status/wilayah berlaku
   const filteredODPs = useMemo(() => {
     if (searchedCenter) {
       // Mode pencarian: tampilkan semua ODP dalam radius, abaikan filter lain
@@ -199,7 +197,11 @@ export default function MapPage() {
       });
     }
 
-    // Mode filter biasa
+    // Jika tidak ada filter aktif → kembalikan array kosong (jangan tampilkan semua)
+    const isFilterActive = filterStatus !== 'all' || filterKabupatenKota !== 'all' || filterKecamatan !== 'all' || filterKelurahan !== 'all';
+    if (!isFilterActive) return [];
+
+    // Mode filter: tampilkan ODP sesuai filter
     return odps.filter(odp => {
       const lat = Number(odp.LATITUDE);
       const lng = Number(odp.LONGITUDE);
