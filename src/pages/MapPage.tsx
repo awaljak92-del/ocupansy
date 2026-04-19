@@ -3,7 +3,7 @@ import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, Polyline,
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useStore } from '../store';
-import { Filter, RefreshCw, Search, X, LocateFixed, Loader2 } from 'lucide-react';
+import { Filter, RefreshCw, Search, X, LocateFixed, Loader2, Copy, Check } from 'lucide-react';
 import { getODPStatus } from '../lib/api';
 import { getRoutesToMany, formatDistance, formatDuration, type RouteResult } from '../lib/routing';
 
@@ -124,6 +124,62 @@ function MapClickHandler({ onMapClick }: { onMapClick: (lat: number, lng: number
     },
   });
   return null;
+}
+
+// Copyable coordinate component
+function CopyableCoord({ lat, lng }: { lat: number; lng: number }) {
+  const [copied, setCopied] = React.useState(false);
+  const coordText = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+
+  const handleCopy = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(coordText);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Fallback for older browsers
+      const ta = document.createElement('textarea');
+      ta.value = coordText;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  return (
+    <div
+      onClick={handleCopy}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        cursor: 'pointer',
+        background: '#f0f9ff',
+        border: '1px solid #bae6fd',
+        borderRadius: '6px',
+        padding: '6px 10px',
+        marginTop: '4px',
+        transition: 'all 0.2s',
+      }}
+      title="Klik untuk copy koordinat"
+    >
+      <span style={{ fontFamily: 'monospace', fontSize: '12px', color: '#0369a1', flex: 1 }}>
+        {coordText}
+      </span>
+      {copied ? (
+        <Check size={14} style={{ color: '#16a34a', flexShrink: 0 }} />
+      ) : (
+        <Copy size={14} style={{ color: '#0369a1', flexShrink: 0 }} />
+      )}
+      {copied && (
+        <span style={{ fontSize: '10px', color: '#16a34a', fontWeight: 600 }}>Copied!</span>
+      )}
+    </div>
+  );
 }
 
 export default function MapPage() {
@@ -445,6 +501,10 @@ export default function MapPage() {
                       <p><span className="font-semibold text-gray-600">Kab/Kota:</span> {odp.validate_kabupatenkota}</p>
                       <p><span className="font-semibold text-gray-600">Kecamatan:</span> {odp.validate_kecamatan}</p>
                       <p><span className="font-semibold text-gray-600">Kelurahan:</span> {odp.validate_kelurahan}</p>
+                      <div>
+                        <span className="font-semibold text-gray-600">Koordinat:</span>
+                        <CopyableCoord lat={lat} lng={lng} />
+                      </div>
                       {route && (
                         <>
                           <hr className="my-2" />
