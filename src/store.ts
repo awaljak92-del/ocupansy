@@ -86,6 +86,10 @@ interface AppState {
   setFilterKabupatenKota: (kabupaten: string) => void;
   setFilterKecamatan: (kecamatan: string) => void;
   setFilterKelurahan: (kelurahan: string) => void;
+
+  // Role-based filtered ODPs
+  // owner: sees all ODPs | admin/sales: sees only ODPs matching user.datel (STO)
+  getFilteredODPs: () => ODP[];
 }
 
 export const useStore = create<AppState>()(
@@ -159,6 +163,22 @@ export const useStore = create<AppState>()(
       setFilterKabupatenKota: (kabupaten) => set({ filterKabupatenKota: kabupaten, filterKecamatan: 'all', filterKelurahan: 'all' }),
       setFilterKecamatan: (kecamatan) => set({ filterKecamatan: kecamatan, filterKelurahan: 'all' }),
       setFilterKelurahan: (kelurahan) => set({ filterKelurahan: kelurahan }),
+
+      // Role-based ODP access control
+      getFilteredODPs: () => {
+        const { user, odps } = get();
+        // Owner sees everything
+        if (!user || user.role === 'owner') return odps;
+        // Admin & sales: filter by datel
+        if (user.datel) {
+          const datelUpper = user.datel.toUpperCase().trim();
+          return odps.filter(odp => 
+            odp.DATEL?.toUpperCase().trim() === datelUpper
+          );
+        }
+        // No datel assigned → see all (fallback)
+        return odps;
+      },
     }),
     {
       name: 'odp-app-storage',
