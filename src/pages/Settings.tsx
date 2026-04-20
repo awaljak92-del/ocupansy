@@ -41,10 +41,10 @@ function getSheetData(sheetName) {
 
 // Format Kolom Spreadsheet yang dibutuhkan (Baris Pertama / Header):
 // 1. Sheet "ODP_Data":
-// ODP_NAME | LATITUDE | LONGITUDE | AVAI | USED | RSV | RSK | IS_TOTAL | STO | TGL_GOLIVE | TAHUN_ODP | BULAN_ODP | OCC_2 | validate_kelurahan | validate_kecamatan | validate_kabupatenkota
+// ODP_NAME | LATITUDE | LONGITUDE | AVAI | USED | RSV | RSK | IS_TOTAL | STO | DATEL | TGL_GOLIVE | TAHUN_ODP | BULAN_ODP | OCC_2 | validate_kelurahan | validate_kecamatan | validate_kabupatenkota
 // 
 // 2. Sheet "User_Role":
-// username | password | role | name
+// username | password | role | name | datel
 `;
 
 export default function Settings() {
