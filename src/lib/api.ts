@@ -6,6 +6,7 @@ export interface User {
   password?: string;
   role: UserRole;
   name: string;
+  datel?: string; // maps to ODP.DATEL — e.g. "PANGKALAN BUN", "SAMPIT"
 }
 
 export interface ODP {
@@ -18,6 +19,7 @@ export interface ODP {
   RSK: number;
   IS_TOTAL: number;
   STO: string;
+  DATEL: string;
   TGL_GOLIVE: string;
   TAHUN_ODP: string | number;
   BULAN_ODP: string | number;
