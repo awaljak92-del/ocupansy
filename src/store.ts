@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 import { ODP, User, fetchODPData, fetchUsers, getODPStatus } from './lib/api';
 
 export interface WeeklySnapshot {
-  weekKey: string;       // "2026-W15"
+  weekKey: string;       // "2026-W15" or "2026-W15-SAMPIT"
   weekLabel: string;     // "7-13 Apr"
   timestamp: number;
   total: number;
@@ -13,6 +13,7 @@ export interface WeeklySnapshot {
   orange: number;
   red: number;
   avgOcc: number;        // rata-rata okupansi %
+  datel: string;         // "ALL" | "PANGKALAN BUN" | "SAMPIT"
 }
 
 function getWeekKey(): string {
@@ -33,14 +34,16 @@ function getWeekLabel(): string {
   return `${monday.getDate()}-${sunday.getDate()} ${months[sunday.getMonth()]}`;
 }
 
-function buildSnapshot(odps: ODP[]): WeeklySnapshot {
+function buildSnapshot(odps: ODP[], datel: string): WeeklySnapshot {
+  const datelTag = datel || 'ALL';
   const snap: WeeklySnapshot = {
-    weekKey: getWeekKey(),
+    weekKey: `${getWeekKey()}-${datelTag}`,
     weekLabel: getWeekLabel(),
     timestamp: Date.now(),
     total: odps.length,
     black: 0, green: 0, yellow: 0, orange: 0, red: 0,
     avgOcc: 0,
+    datel: datelTag,
   };
   let totalOcc = 0;
   odps.forEach(odp => {
@@ -90,6 +93,9 @@ interface AppState {
   // Role-based filtered ODPs
   // owner: sees all ODPs | admin/sales: sees only ODPs matching user.datel (STO)
   getFilteredODPs: () => ODP[];
+
+  // Role-based filtered weekly snapshots
+  getFilteredSnapshots: () => WeeklySnapshot[];
 }
 
 export const useStore = create<AppState>()(
@@ -113,18 +119,20 @@ export const useStore = create<AppState>()(
           const data = await fetchODPData(get().appScriptUrl);
           set({ odps: data, isLoading: false });
 
-          // Simpan snapshot mingguan
-          if (data.length > 0) {
-            const snap = buildSnapshot(data);
+          // Simpan snapshot mingguan (per datel)
+          const filteredData = get().getFilteredODPs();
+          const userDatel = get().user?.datel?.toUpperCase().trim() || '';
+          if (filteredData.length > 0) {
+            const snap = buildSnapshot(filteredData, userDatel);
             const existing = get().weeklySnapshots;
-            // Update snapshot minggu ini jika sudah ada, atau tambah baru
+            // Update snapshot minggu+datel ini jika sudah ada, atau tambah baru
             const idx = existing.findIndex(s => s.weekKey === snap.weekKey);
             let updated: WeeklySnapshot[];
             if (idx >= 0) {
               updated = [...existing];
               updated[idx] = snap;
             } else {
-              updated = [...existing, snap].slice(-12); // simpan maks 12 minggu
+              updated = [...existing, snap].slice(-50); // simpan maks 50 entries (multi-datel)
             }
             set({ weeklySnapshots: updated });
           }
@@ -169,15 +177,36 @@ export const useStore = create<AppState>()(
         const { user, odps } = get();
         // Owner sees everything
         if (!user || user.role === 'owner') return odps;
-        // Admin & sales: filter by datel
+        // Admin & sales: filter by datel → kabupaten/kota mapping
         if (user.datel) {
           const datelUpper = user.datel.toUpperCase().trim();
-          return odps.filter(odp => 
-            odp.DATEL?.toUpperCase().trim() === datelUpper
-          );
+          // Mapping datel ke kabupaten/kota yang boleh dilihat
+          const DATEL_KABUPATEN_MAP: Record<string, string[]> = {
+            'PANGKALAN BUN': ['KOTAWARINGIN BARAT', 'LAMANDAU', 'SUKAMARA'],
+            'SAMPIT': ['KOTAWARINGIN TIMUR', 'SERUYAN'],
+          };
+          const allowedKabs = DATEL_KABUPATEN_MAP[datelUpper];
+          if (allowedKabs) {
+            return odps.filter(odp => {
+              const kab = odp.validate_kabupatenkota?.toUpperCase().trim();
+              return allowedKabs.includes(kab);
+            });
+          }
+          // Datel tidak ada di mapping → fallback: tidak tampilkan apa-apa
+          return [];
         }
         // No datel assigned → see all (fallback)
         return odps;
+      },
+
+      // Filter snapshots by current user's datel
+      getFilteredSnapshots: () => {
+        const { user, weeklySnapshots } = get();
+        const datelTag = (!user || user.role === 'owner') ? 'ALL' : (user.datel?.toUpperCase().trim() || 'ALL');
+        return weeklySnapshots
+          .filter(s => s.datel === datelTag)
+          .sort((a, b) => a.weekKey.localeCompare(b.weekKey))
+          .slice(-12); // maks 12 minggu terakhir
       },
     }),
     {
