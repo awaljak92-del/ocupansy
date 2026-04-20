@@ -24,7 +24,11 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 export default function Dashboard() {
-  const { odps, users, searchHistory, visitedODPs, user: currentUser, weeklySnapshots } = useStore();
+  const { users, searchHistory, visitedODPs, user: currentUser, getFilteredODPs, getFilteredSnapshots } = useStore();
+
+  // Role-based filtered ODPs (admin only sees their datel)
+  const odps = getFilteredODPs();
+  const weeklySnapshots = getFilteredSnapshots();
 
   const stats = useMemo(() => {
     const total = odps.length;
