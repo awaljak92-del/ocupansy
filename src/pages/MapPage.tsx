@@ -33,6 +33,40 @@ const icons = {
   red: createIcon('#ef4444'),
 };
 
+// User location icon — person silhouette
+const userIcon = new L.DivIcon({
+  className: '',
+  html: `<div style="position:relative;width:32px;height:32px;">
+    <svg viewBox="0 0 24 24" width="32" height="32" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="12" cy="12" r="11" fill="#3b82f6" opacity="0.15"/>
+      <circle cx="12" cy="8" r="3.5" fill="#2563eb"/>
+      <path d="M5.5 19.5c0-3.59 2.91-6.5 6.5-6.5s6.5 2.91 6.5 6.5" stroke="#2563eb" stroke-width="2" stroke-linecap="round" fill="#3b82f6" fill-opacity="0.5"/>
+      <circle cx="12" cy="12" r="11" stroke="#2563eb" stroke-width="1.5" fill="none"/>
+    </svg>
+  </div>`,
+  iconSize: [32, 32],
+  iconAnchor: [16, 16],
+});
+
+// Search point icon — crosshair pin
+const searchIcon = new L.DivIcon({
+  className: '',
+  html: `<div style="position:relative;width:28px;height:36px;">
+    <svg viewBox="0 0 28 36" width="28" height="36" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M14 0C7.37 0 2 5.37 2 12c0 8.25 10.26 22.18 11.18 23.42a1 1 0 001.64 0C15.74 34.18 26 20.25 26 12 26 5.37 20.63 0 14 0z" fill="#dc2626"/>
+      <circle cx="14" cy="12" r="5" fill="white"/>
+      <line x1="14" y1="5" x2="14" y2="9" stroke="#dc2626" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="14" y1="15" x2="14" y2="19" stroke="#dc2626" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="7" y1="12" x2="11" y2="12" stroke="#dc2626" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="17" y1="12" x2="21" y2="12" stroke="#dc2626" stroke-width="1.5" stroke-linecap="round"/>
+      <circle cx="14" cy="12" r="1.5" fill="#dc2626"/>
+    </svg>
+  </div>`,
+  iconSize: [28, 36],
+  iconAnchor: [14, 36],
+  popupAnchor: [0, -36],
+});
+
 const statusLabels: Record<string, string> = {
   black: 'Black (0%)',
   green: 'Green (<50%)',
@@ -426,7 +460,7 @@ export default function MapPage() {
 
           {/* User Location Marker */}
           {userLocation && (
-            <Marker position={userLocation} icon={L.divIcon({ className: '', html: '<div style="background:#3b82f6;width:16px;height:16px;border-radius:50%;border:3px solid white;box-shadow:0 0 8px rgba(59,130,246,0.6)"></div>', iconSize: [16, 16], iconAnchor: [8, 8] })}>
+            <Marker position={userLocation} icon={userIcon}>
               <Popup>Lokasi Anda</Popup>
             </Marker>
           )}
@@ -435,7 +469,7 @@ export default function MapPage() {
           {searchedCenter && (
             <>
               <Circle center={searchedCenter} radius={SEARCH_RADIUS} pathOptions={{ color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.08, weight: 2 }} />
-              <Marker position={searchedCenter} icon={L.divIcon({ className: '', html: '<div style="background:#dc2626;width:14px;height:14px;border-radius:50%;border:2px solid white;box-shadow:0 0 6px rgba(220,38,38,0.6)"></div>', iconSize: [14, 14], iconAnchor: [7, 7] })}>
+              <Marker position={searchedCenter} icon={searchIcon}>
                 <Popup>
                   <div>
                     <strong>Titik Pencarian</strong><br/>
