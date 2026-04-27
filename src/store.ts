@@ -105,6 +105,10 @@ interface AppState {
   loadKendala: () => Promise<void>;
   toggleKendala: () => void;
   getFilteredKendala: () => KendalaItem[];
+  filterMenuPenanganan: string;
+  filterKategoriKendala: string;
+  setFilterMenuPenanganan: (val: string) => void;
+  setFilterKategoriKendala: (val: string) => void;
 }
 
 export const useStore = create<AppState>()(
@@ -254,19 +258,37 @@ export const useStore = create<AppState>()(
         const { showKendala, kendalaItems, loadKendala } = get();
         const nextState = !showKendala;
         set({ showKendala: nextState });
+        if (!nextState) {
+          // Reset filter saat mematikan
+          set({ filterMenuPenanganan: 'all', filterKategoriKendala: 'all' });
+        }
         // Lazy load: muat data pertama kali saat diaktifkan
         if (nextState && kendalaItems.length === 0) {
           loadKendala();
         }
       },
+      filterMenuPenanganan: 'all',
+      filterKategoriKendala: 'all',
+      setFilterMenuPenanganan: (val) => set({ filterMenuPenanganan: val }),
+      setFilterKategoriKendala: (val) => set({ filterKategoriKendala: val }),
       getFilteredKendala: () => {
-        const { user, kendalaItems } = get();
-        // Owner sees all
-        if (!user || user.role === 'owner') return kendalaItems;
-        // Admin/sales: filter by datel → sektor
-        const datel = user.datel?.toUpperCase().trim();
-        if (!datel) return [];
-        return kendalaItems.filter(k => k.sektor === datel);
+        const { user, kendalaItems, filterMenuPenanganan, filterKategoriKendala } = get();
+        let items = kendalaItems;
+        // RBAC: owner sees all, admin/sales filter by datel
+        if (user && user.role !== 'owner') {
+          const datel = user.datel?.toUpperCase().trim();
+          if (!datel) return [];
+          items = items.filter(k => k.sektor === datel);
+        }
+        // Filter by Menu Penanganan
+        if (filterMenuPenanganan !== 'all') {
+          items = items.filter(k => k.menuPenanganan === filterMenuPenanganan);
+        }
+        // Filter by Kategori Kendala
+        if (filterKategoriKendala !== 'all') {
+          items = items.filter(k => k.kategoriKendala === filterKategoriKendala);
+        }
+        return items;
       },
     }),
     {
