@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { ODP, User, fetchODPData, fetchUsers, getODPStatus } from './lib/api';
+import { ODP, User, KendalaItem, fetchODPData, fetchUsers, fetchKendala, getODPStatus } from './lib/api';
 
 export interface WeeklySnapshot {
   weekKey: string;       // "2026-W15" or "2026-W15-SAMPIT"
@@ -97,6 +97,14 @@ interface AppState {
 
   // Role-based filtered weekly snapshots
   getFilteredSnapshots: () => WeeklySnapshot[];
+
+  // Kendala layer
+  kendalaItems: KendalaItem[];
+  isKendalaLoading: boolean;
+  showKendala: boolean;
+  loadKendala: () => Promise<void>;
+  toggleKendala: () => void;
+  getFilteredKendala: () => KendalaItem[];
 }
 
 export const useStore = create<AppState>()(
@@ -226,6 +234,39 @@ export const useStore = create<AppState>()(
           .filter(s => s.datel === datelTag)
           .sort((a, b) => a.weekKey.localeCompare(b.weekKey))
           .slice(-12); // maks 12 minggu terakhir
+      },
+
+      // ══════ Kendala Layer ══════
+      kendalaItems: [],
+      isKendalaLoading: false,
+      showKendala: false,
+      loadKendala: async () => {
+        set({ isKendalaLoading: true });
+        try {
+          const data = await fetchKendala();
+          set({ kendalaItems: data, isKendalaLoading: false });
+        } catch (err) {
+          console.error('Gagal memuat kendala:', err);
+          set({ isKendalaLoading: false });
+        }
+      },
+      toggleKendala: () => {
+        const { showKendala, kendalaItems, loadKendala } = get();
+        const nextState = !showKendala;
+        set({ showKendala: nextState });
+        // Lazy load: muat data pertama kali saat diaktifkan
+        if (nextState && kendalaItems.length === 0) {
+          loadKendala();
+        }
+      },
+      getFilteredKendala: () => {
+        const { user, kendalaItems } = get();
+        // Owner sees all
+        if (!user || user.role === 'owner') return kendalaItems;
+        // Admin/sales: filter by datel → sektor
+        const datel = user.datel?.toUpperCase().trim();
+        if (!datel) return [];
+        return kendalaItems.filter(k => k.sektor === datel);
       },
     }),
     {
