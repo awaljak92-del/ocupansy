@@ -218,11 +218,14 @@ function CopyableCoord({ lat, lng }: { lat: number; lng: number }) {
 
 export default function MapPage() {
   const { 
-    odps, isLoading, loadODPs, 
+    isLoading, loadODPs, loadUsers, getFilteredODPs,
     filterStatus, filterKabupatenKota, filterKecamatan, filterKelurahan,
     setFilterStatus, setFilterKabupatenKota, setFilterKecamatan, setFilterKelurahan,
     addSearchHistory, addVisitedODP
   } = useStore();
+
+  // Role-based filtered ODPs (admin only sees their datel)
+  const odps = getFilteredODPs();
 
   const [showFilters, setShowFilters] = useState(false);
   const [searchInput, setSearchInput] = useState('');
@@ -246,9 +249,11 @@ export default function MapPage() {
   };
 
   useEffect(() => {
+    // Refresh user data (datel) then load ODPs
+    loadUsers().catch(() => {});
     loadODPs();
     locateUser();
-  }, [loadODPs]);
+  }, [loadODPs, loadUsers]);
 
   // Extract unique values for filters
   const kabupatens = useMemo(() => Array.from(new Set(odps.map(o => o.validate_kabupatenkota))).filter(Boolean), [odps]);
