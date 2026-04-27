@@ -107,8 +107,10 @@ interface AppState {
   getFilteredKendala: () => KendalaItem[];
   filterMenuPenanganan: string;
   filterKategoriKendala: string;
+  filterBulanKendala: string;
   setFilterMenuPenanganan: (val: string) => void;
   setFilterKategoriKendala: (val: string) => void;
+  setFilterBulanKendala: (val: string) => void;
 }
 
 export const useStore = create<AppState>()(
@@ -260,7 +262,7 @@ export const useStore = create<AppState>()(
         set({ showKendala: nextState });
         if (!nextState) {
           // Reset filter saat mematikan
-          set({ filterMenuPenanganan: 'all', filterKategoriKendala: 'all' });
+          set({ filterMenuPenanganan: 'all', filterKategoriKendala: 'all', filterBulanKendala: 'all' });
         }
         // Lazy load: muat data pertama kali saat diaktifkan
         if (nextState && kendalaItems.length === 0) {
@@ -269,10 +271,12 @@ export const useStore = create<AppState>()(
       },
       filterMenuPenanganan: 'all',
       filterKategoriKendala: 'all',
+      filterBulanKendala: 'all',
       setFilterMenuPenanganan: (val) => set({ filterMenuPenanganan: val }),
       setFilterKategoriKendala: (val) => set({ filterKategoriKendala: val }),
+      setFilterBulanKendala: (val) => set({ filterBulanKendala: val }),
       getFilteredKendala: () => {
-        const { user, kendalaItems, filterMenuPenanganan, filterKategoriKendala } = get();
+        const { user, kendalaItems, filterMenuPenanganan, filterKategoriKendala, filterBulanKendala } = get();
         let items = kendalaItems;
         // RBAC: owner sees all, admin/sales filter by datel
         if (user && user.role !== 'owner') {
@@ -287,6 +291,10 @@ export const useStore = create<AppState>()(
         // Filter by Kategori Kendala
         if (filterKategoriKendala !== 'all') {
           items = items.filter(k => k.kategoriKendala === filterKategoriKendala);
+        }
+        // Filter by Bulan
+        if (filterBulanKendala !== 'all') {
+          items = items.filter(k => k.bulan === filterBulanKendala);
         }
         return items;
       },
