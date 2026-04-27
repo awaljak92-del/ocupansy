@@ -108,9 +108,11 @@ interface AppState {
   filterMenuPenanganan: string;
   filterKategoriKendala: string;
   filterBulanKendala: string;
+  filterKendalaSpesifik: string;
   setFilterMenuPenanganan: (val: string) => void;
   setFilterKategoriKendala: (val: string) => void;
   setFilterBulanKendala: (val: string) => void;
+  setFilterKendalaSpesifik: (val: string) => void;
 }
 
 export const useStore = create<AppState>()(
@@ -262,7 +264,7 @@ export const useStore = create<AppState>()(
         set({ showKendala: nextState });
         if (!nextState) {
           // Reset filter saat mematikan
-          set({ filterMenuPenanganan: 'all', filterKategoriKendala: 'all', filterBulanKendala: 'all' });
+          set({ filterMenuPenanganan: 'all', filterKategoriKendala: 'all', filterBulanKendala: 'all', filterKendalaSpesifik: 'all' });
         }
         // Lazy load: muat data pertama kali saat diaktifkan
         if (nextState && kendalaItems.length === 0) {
@@ -272,11 +274,13 @@ export const useStore = create<AppState>()(
       filterMenuPenanganan: 'all',
       filterKategoriKendala: 'all',
       filterBulanKendala: 'all',
+      filterKendalaSpesifik: 'all',
       setFilterMenuPenanganan: (val) => set({ filterMenuPenanganan: val }),
-      setFilterKategoriKendala: (val) => set({ filterKategoriKendala: val }),
+      setFilterKategoriKendala: (val) => set({ filterKategoriKendala: val, filterKendalaSpesifik: 'all' }),
       setFilterBulanKendala: (val) => set({ filterBulanKendala: val }),
+      setFilterKendalaSpesifik: (val) => set({ filterKendalaSpesifik: val }),
       getFilteredKendala: () => {
-        const { user, kendalaItems, filterMenuPenanganan, filterKategoriKendala, filterBulanKendala } = get();
+        const { user, kendalaItems, filterMenuPenanganan, filterKategoriKendala, filterBulanKendala, filterKendalaSpesifik } = get();
         let items = kendalaItems;
         // RBAC: owner sees all, admin/sales filter by datel
         if (user && user.role !== 'owner') {
@@ -291,6 +295,10 @@ export const useStore = create<AppState>()(
         // Filter by Kategori Kendala
         if (filterKategoriKendala !== 'all') {
           items = items.filter(k => k.kategoriKendala === filterKategoriKendala);
+        }
+        // Filter by Kendala Spesifik
+        if (filterKendalaSpesifik !== 'all') {
+          items = items.filter(k => k.kendalaSpesifik === filterKendalaSpesifik);
         }
         // Filter by Bulan
         if (filterBulanKendala !== 'all') {
