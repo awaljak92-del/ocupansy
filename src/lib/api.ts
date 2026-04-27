@@ -113,6 +113,7 @@ export interface KendalaItem {
   orderId: string;
   timestamp: string;
   bulan: string;
+  odpName: string;
 }
 
 const KENDALA_SHEET_ID = '1ZCQR8Y4GvDAwGekco37y7mj8lkcJah9INYFsiH4egSM';
@@ -149,6 +150,7 @@ export async function fetchKendala(): Promise<KendalaItem[]> {
     const colIndex: Record<string, number> = {};
     cols.forEach((col: any, i: number) => {
       const label = col.label?.toString()?.trim()?.toUpperCase();
+      console.log(`[Kendala] Col[${i}]: label="${label}", id="${col.id}", type="${col.type}", raw=${JSON.stringify(col)}`);
       if (label) colIndex[label] = i;
     });
 
@@ -180,12 +182,31 @@ export async function fetchKendala(): Promise<KendalaItem[]> {
     const ORDER_ID = findCol('ORDER ID', 'ORDER ID');
     const TIMESTAMP = findCol('TIMESTAMP', 'TIMESTAMP') ?? findCol('WAKTU', 'WAKTU');
     const BULAN = findCol('BULAN', 'BULAN');
+    const ODP = findCol('ODP', 'ODP');
 
-    console.log('[Kendala] Column indices:', { SEKTOR, KOORDINAT, MENU, KATEGORI, KENDALA, SALES, CHANNEL, STATUS, ORDER_ID, TIMESTAMP, BULAN });
+    console.log('[Kendala] Column indices:', { SEKTOR, KOORDINAT, MENU, KATEGORI, KENDALA, SALES, CHANNEL, STATUS, ORDER_ID, TIMESTAMP, BULAN, ODP });
 
     const items: KendalaItem[] = [];
     let validCoordCount = 0;
     let emptyCoordCount = 0;
+
+    // Helper: extract bulan name from a gviz date value like "Date(2026,3,15)" or from a formatted string
+    const BULAN_NAMES = ['JANUARI','FEBRUARI','MARET','APRIL','MEI','JUNI','JULI','AGUSTUS','SEPTEMBER','OKTOBER','NOVEMBER','DESEMBER'];
+    const extractBulan = (cell: any): string => {
+      if (!cell) return '';
+      // 1) Formatted value (f) — might be "APRIL", "April 2026", etc.
+      const fVal = cell.f?.toString()?.trim();
+      if (fVal) return fVal;
+      // 2) Raw value (v) — could be a gviz Date string like "Date(2026,3,15)" (month 0-indexed)
+      const vVal = cell.v?.toString()?.trim();
+      if (!vVal) return '';
+      const dateMatch = vVal.match(/Date\((\d+),(\d+)(?:,(\d+))?\)/);
+      if (dateMatch) {
+        const monthIdx = parseInt(dateMatch[2]); // 0-indexed
+        if (monthIdx >= 0 && monthIdx < 12) return BULAN_NAMES[monthIdx];
+      }
+      return vVal;
+    };
 
     for (const row of rows) {
       const cells = row.c || [];
@@ -207,9 +228,31 @@ export async function fetchKendala(): Promise<KendalaItem[]> {
         emptyCoordCount++;
       }
 
+      // Parse bulan — use dedicated extractor for gviz date handling
+      let bulan = BULAN !== undefined ? extractBulan(cells[BULAN]) : '';
+
+      // Fallback: if bulan is empty but timestamp exists, derive month from timestamp
+      if (!bulan) {
+        const tsVal = val(TIMESTAMP);
+        if (tsVal) {
+          // Try parsing common date formats: "27/04/2026", "2026-04-27", "April 27, 2026", etc.
+          const d = new Date(tsVal);
+          if (!isNaN(d.getTime())) {
+            bulan = BULAN_NAMES[d.getMonth()];
+          } else {
+            // Try DD/MM/YYYY format
+            const parts = tsVal.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+            if (parts) {
+              const monthIdx = parseInt(parts[2]) - 1;
+              if (monthIdx >= 0 && monthIdx < 12) bulan = BULAN_NAMES[monthIdx];
+            }
+          }
+        }
+      }
+
       // Log beberapa sample pertama untuk debugging
       if (items.length < 5) {
-        console.log(`[Kendala] Sample #${items.length}: koordinat="${koordinat}" → lat=${lat}, lng=${lng}`);
+        console.log(`[Kendala] Sample #${items.length}: koordinat="${koordinat}" → lat=${lat}, lng=${lng}, bulan="${bulan}", raw_bulan=${JSON.stringify(cells[BULAN!])}`);
       }
 
       items.push({
@@ -225,7 +268,8 @@ export async function fetchKendala(): Promise<KendalaItem[]> {
         statusOrder: val(STATUS),
         orderId: val(ORDER_ID),
         timestamp: val(TIMESTAMP),
-        bulan: val(BULAN),
+        bulan,
+        odpName: val(ODP),
       });
     }
 
