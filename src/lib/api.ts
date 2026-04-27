@@ -153,29 +153,27 @@ export async function fetchKendala(): Promise<KendalaItem[]> {
 
     const getIdx = (name: string): number | undefined => colIndex[name];
 
-    // Cari kolom KOORDINAT dengan partial match (bisa beda nama persis)
-    const findKoordinatIdx = (): number | undefined => {
-      // Exact match dulu
-      const exact = getIdx('KOORDINAT PELANGGAN TEKNISI');
+    // Fuzzy column finder: exact match dulu, lalu partial match
+    const findCol = (exactName: string, keyword: string): number | undefined => {
+      const exact = getIdx(exactName);
       if (exact !== undefined) return exact;
-      // Partial match: cari kolom yang mengandung "KOORDINAT"
-      const key = Object.keys(colIndex).find(k => k.includes('KOORDINAT'));
+      const key = Object.keys(colIndex).find(k => k.includes(keyword));
       if (key) {
-        console.log(`[Kendala] Kolom koordinat ditemukan via partial match: "${key}"`);
+        console.log(`[Kendala] Kolom "${exactName}" → partial match: "${key}"`);
         return colIndex[key];
       }
-      console.warn('[Kendala] ⚠️ Kolom KOORDINAT tidak ditemukan!');
+      console.warn(`[Kendala] ⚠️ Kolom "${exactName}" (keyword: ${keyword}) tidak ditemukan!`);
       return undefined;
     };
 
-    const SEKTOR = getIdx('SEKTOR');
-    const KOORDINAT = findKoordinatIdx();
-    const MENU = getIdx('MENU PENANGANAN');
-    const KATEGORI = getIdx('KATEGORI KENDALA');
-    const KENDALA = getIdx('KENDALA SPESIFIK');
-    const SALES = getIdx('NAMA SALES');
-    const CHANNEL = getIdx('CHANNEL');
-    const STATUS = getIdx('STATUS ORDER');
+    const SEKTOR = findCol('SEKTOR', 'SEKTOR');
+    const KOORDINAT = findCol('KOORDINAT PELANGGAN TEKNISI', 'KOORDINAT');
+    const MENU = findCol('MENU PENANGANAN', 'MENU');
+    const KATEGORI = findCol('KATEGORI KENDALA', 'KATEGORI');
+    const KENDALA = findCol('KENDALA SPESIFIK', 'KENDALA SPESIFIK');
+    const SALES = findCol('NAMA SALES', 'SALES');
+    const CHANNEL = findCol('CHANNEL', 'CHANNEL');
+    const STATUS = findCol('STATUS ORDER', 'STATUS');
 
     console.log('[Kendala] Column indices:', { SEKTOR, KOORDINAT, MENU, KATEGORI, KENDALA, SALES, CHANNEL, STATUS });
 
