@@ -3,7 +3,7 @@ import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, Polyline,
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useStore } from '../store';
-import { Filter, RefreshCw, Search, X, LocateFixed, Loader2, Copy, Check } from 'lucide-react';
+import { Filter, RefreshCw, Search, X, LocateFixed, Loader2, Copy, Check, AlertTriangle } from 'lucide-react';
 import { getODPStatus } from '../lib/api';
 import { getRoutesToMany, formatDistance, formatDuration, type RouteResult } from '../lib/routing';
 
@@ -74,6 +74,20 @@ const statusLabels: Record<string, string> = {
   orange: 'Orange (80-99%)',
   red: 'Red (100%)',
 };
+
+// Kendala icon — warning triangle
+const kendalaIcon = new L.DivIcon({
+  className: '',
+  html: `<div style="position:relative;width:24px;height:24px;">
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M12 2L1 21h22L12 2z" fill="#dc2626" stroke="#fff" stroke-width="1.5"/>
+      <text x="12" y="17" text-anchor="middle" fill="white" font-size="12" font-weight="bold">!</text>
+    </svg>
+  </div>`,
+  iconSize: [24, 24],
+  iconAnchor: [12, 24],
+  popupAnchor: [0, -24],
+});
 
 // Haversine distance in meters
 function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
@@ -221,11 +235,13 @@ export default function MapPage() {
     isLoading, loadODPs, loadUsers, getFilteredODPs,
     filterStatus, filterKabupatenKota, filterKecamatan, filterKelurahan,
     setFilterStatus, setFilterKabupatenKota, setFilterKecamatan, setFilterKelurahan,
-    addSearchHistory, addVisitedODP
+    addSearchHistory, addVisitedODP,
+    showKendala, toggleKendala, isKendalaLoading, getFilteredKendala
   } = useStore();
 
   // Role-based filtered ODPs (admin only sees their datel)
   const odps = getFilteredODPs();
+  const kendalaItems = showKendala ? getFilteredKendala() : [];
 
   const [showFilters, setShowFilters] = useState(false);
   const [searchInput, setSearchInput] = useState('');
@@ -557,6 +573,44 @@ export default function MapPage() {
               </Marker>
             );
           })}
+          {/* === Marker Kendala === */}
+          {showKendala && kendalaItems.map((item, idx) => {
+            if (item.latitude === 0 && item.longitude === 0) return null;
+            const statusColor = item.statusOrder?.toUpperCase().includes('CLOSE') ? '#16a34a' : '#dc2626';
+            return (
+              <Marker
+                key={`kendala-${idx}`}
+                position={[item.latitude, item.longitude]}
+                icon={kendalaIcon}
+              >
+                <Popup maxWidth={300}>
+                  <div style={{ padding: '4px', minWidth: '220px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '2px solid #ef4444', paddingBottom: '6px', marginBottom: '8px' }}>
+                      <span style={{ fontSize: '16px' }}>⚠️</span>
+                      <h3 style={{ margin: 0, fontWeight: 'bold', fontSize: '14px', color: '#dc2626' }}>Kendala</h3>
+                    </div>
+                    <div style={{ fontSize: '12px', lineHeight: '1.8' }}>
+                      <p style={{ margin: 0 }}><span style={{ fontWeight: 600, color: '#6b7280' }}>Sektor:</span> {item.sektor}</p>
+                      <p style={{ margin: 0 }}><span style={{ fontWeight: 600, color: '#6b7280' }}>Menu:</span> {item.menuPenanganan}</p>
+                      <p style={{ margin: 0 }}><span style={{ fontWeight: 600, color: '#6b7280' }}>Kategori:</span> {item.kategoriKendala}</p>
+                      <p style={{ margin: 0 }}><span style={{ fontWeight: 600, color: '#6b7280' }}>Kendala:</span> {item.kendalaSpesifik}</p>
+                      <p style={{ margin: 0 }}><span style={{ fontWeight: 600, color: '#6b7280' }}>Sales:</span> {item.namaSales}</p>
+                      <p style={{ margin: 0 }}><span style={{ fontWeight: 600, color: '#6b7280' }}>Channel:</span> {item.channel}</p>
+                      <p style={{ margin: 0 }}>
+                        <span style={{ fontWeight: 600, color: '#6b7280' }}>Status:</span>{' '}
+                        <span style={{ fontWeight: 700, color: statusColor, textTransform: 'uppercase', fontSize: '11px' }}>{item.statusOrder}</span>
+                      </p>
+                      <div style={{ marginTop: '4px' }}>
+                        <span style={{ fontWeight: 600, color: '#6b7280' }}>Koordinat:</span>
+                        <CopyableCoord lat={item.latitude} lng={item.longitude} />
+                      </div>
+                    </div>
+                  </div>
+                </Popup>
+              </Marker>
+            );
+          })}
+
           <MapBounds 
             markers={filteredODPs.map(o => ({ lat: Number(o.LATITUDE), lng: Number(o.LONGITUDE) }))} 
             center={searchedCenter} 
@@ -588,6 +642,17 @@ export default function MapPage() {
           title="Filter"
         >
           <Filter size={20} />
+        </button>
+        <button 
+          onClick={toggleKendala} 
+          className={`p-3 rounded-full shadow-lg transition-colors ${showKendala ? 'bg-red-600 text-white' : 'bg-white text-gray-700 hover:text-red-600'}`}
+          title={showKendala ? 'Sembunyikan Kendala' : 'Tampilkan Kendala'}
+        >
+          {isKendalaLoading ? (
+            <Loader2 size={20} className="animate-spin" />
+          ) : (
+            <AlertTriangle size={20} />
+          )}
         </button>
       </div>
 
@@ -676,6 +741,23 @@ export default function MapPage() {
         <div className="absolute bottom-20 left-4 right-4 z-[1000] bg-white/95 rounded-lg shadow-lg p-3 flex items-center gap-3">
           <Loader2 size={18} className="animate-spin text-blue-600" />
           <span className="text-sm text-gray-600">{routingProgress}</span>
+        </div>
+      )}
+
+      {/* Kendala layer badge */}
+      {showKendala && !isKendalaLoading && (
+        <div className="absolute bottom-20 left-4 z-[1000] bg-red-600 text-white rounded-lg shadow-lg px-3 py-2 flex items-center gap-2">
+          <AlertTriangle size={14} />
+          <span className="text-xs font-medium">Kendala: {kendalaItems.length} titik</span>
+          <button onClick={toggleKendala} className="ml-1 hover:bg-red-700 rounded p-0.5">
+            <X size={14} />
+          </button>
+        </div>
+      )}
+      {showKendala && isKendalaLoading && (
+        <div className="absolute bottom-20 left-4 z-[1000] bg-white/95 rounded-lg shadow-lg px-3 py-2 flex items-center gap-2">
+          <Loader2 size={14} className="animate-spin text-red-600" />
+          <span className="text-xs text-gray-600">Memuat data kendala...</span>
         </div>
       )}
     </div>
