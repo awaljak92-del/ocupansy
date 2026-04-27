@@ -110,6 +110,7 @@ export interface KendalaItem {
   namaSales: string;
   channel: string;
   statusOrder: string;
+  orderId: string;
 }
 
 const KENDALA_SHEET_ID = '1ZCQR8Y4GvDAwGekco37y7mj8lkcJah9INYFsiH4egSM';
@@ -174,8 +175,9 @@ export async function fetchKendala(): Promise<KendalaItem[]> {
     const SALES = findCol('NAMA SALES', 'SALES');
     const CHANNEL = findCol('CHANNEL', 'CHANNEL');
     const STATUS = findCol('STATUS ORDER', 'STATUS');
+    const ORDER_ID = findCol('ORDER ID', 'ORDER ID');
 
-    console.log('[Kendala] Column indices:', { SEKTOR, KOORDINAT, MENU, KATEGORI, KENDALA, SALES, CHANNEL, STATUS });
+    console.log('[Kendala] Column indices:', { SEKTOR, KOORDINAT, MENU, KATEGORI, KENDALA, SALES, CHANNEL, STATUS, ORDER_ID });
 
     const items: KendalaItem[] = [];
     let validCoordCount = 0;
@@ -217,6 +219,7 @@ export async function fetchKendala(): Promise<KendalaItem[]> {
         namaSales: val(SALES),
         channel: val(CHANNEL),
         statusOrder: val(STATUS),
+        orderId: val(ORDER_ID),
       });
     }
 
