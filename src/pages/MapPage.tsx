@@ -238,8 +238,8 @@ export default function MapPage() {
     addSearchHistory, addVisitedODP,
     showKendala, toggleKendala, isKendalaLoading, getFilteredKendala,
     kendalaItems: allKendalaItems,
-    filterMenuPenanganan, filterKategoriKendala,
-    setFilterMenuPenanganan, setFilterKategoriKendala
+    filterMenuPenanganan, filterKategoriKendala, filterBulanKendala,
+    setFilterMenuPenanganan, setFilterKategoriKendala, setFilterBulanKendala
   } = useStore();
 
   // Role-based filtered ODPs (admin only sees their datel)
@@ -253,6 +253,10 @@ export default function MapPage() {
   );
   const kendalaKategoriOptions = useMemo(() => 
     Array.from(new Set(allKendalaItems.map(k => k.kategoriKendala).filter(Boolean))).sort(),
+    [allKendalaItems]
+  );
+  const kendalaBulanOptions = useMemo(() => 
+    Array.from(new Set(allKendalaItems.map(k => k.bulan).filter(Boolean))).sort(),
     [allKendalaItems]
   );
 
@@ -603,6 +607,7 @@ export default function MapPage() {
                       <h3 style={{ margin: 0, fontWeight: 'bold', fontSize: '14px', color: '#dc2626' }}>Kendala</h3>
                     </div>
                     <div style={{ fontSize: '12px', lineHeight: '1.8' }}>
+                      <p style={{ margin: 0 }}><span style={{ fontWeight: 600, color: '#6b7280' }}>Timestamp:</span> {item.timestamp || '-'}</p>
                       <p style={{ margin: 0 }}><span style={{ fontWeight: 600, color: '#6b7280' }}>Sektor:</span> {item.sektor}</p>
                       <p style={{ margin: 0 }}><span style={{ fontWeight: 600, color: '#6b7280' }}>Order ID:</span> {item.orderId || '-'}</p>
                       <p style={{ margin: 0 }}><span style={{ fontWeight: 600, color: '#6b7280' }}>Menu:</span> {item.menuPenanganan}</p>
@@ -794,6 +799,19 @@ export default function MapPage() {
               >
                 <option value="all">Semua Kategori</option>
                 {kendalaKategoriOptions.map(opt => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-[10px] font-medium text-gray-500 mb-0.5 uppercase">Bulan</label>
+              <select
+                value={filterBulanKendala}
+                onChange={(e) => setFilterBulanKendala(e.target.value)}
+                className="w-full border border-gray-300 rounded-md text-xs p-1.5 bg-gray-50 focus:border-red-500 focus:ring-red-500 outline-none"
+              >
+                <option value="all">Semua Bulan</option>
+                {kendalaBulanOptions.map(opt => (
                   <option key={opt} value={opt}>{opt}</option>
                 ))}
               </select>
