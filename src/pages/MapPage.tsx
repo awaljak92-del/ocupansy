@@ -236,12 +236,25 @@ export default function MapPage() {
     filterStatus, filterKabupatenKota, filterKecamatan, filterKelurahan,
     setFilterStatus, setFilterKabupatenKota, setFilterKecamatan, setFilterKelurahan,
     addSearchHistory, addVisitedODP,
-    showKendala, toggleKendala, isKendalaLoading, getFilteredKendala
+    showKendala, toggleKendala, isKendalaLoading, getFilteredKendala,
+    kendalaItems: allKendalaItems,
+    filterMenuPenanganan, filterKategoriKendala,
+    setFilterMenuPenanganan, setFilterKategoriKendala
   } = useStore();
 
   // Role-based filtered ODPs (admin only sees their datel)
   const odps = getFilteredODPs();
   const kendalaItems = showKendala ? getFilteredKendala() : [];
+
+  // Unique values for kendala filter dropdowns (dari seluruh data, bukan yang sudah difilter)
+  const kendalaMenuOptions = useMemo(() => 
+    Array.from(new Set(allKendalaItems.map(k => k.menuPenanganan).filter(Boolean))).sort(),
+    [allKendalaItems]
+  );
+  const kendalaKategoriOptions = useMemo(() => 
+    Array.from(new Set(allKendalaItems.map(k => k.kategoriKendala).filter(Boolean))).sort(),
+    [allKendalaItems]
+  );
 
   const [showFilters, setShowFilters] = useState(false);
   const [searchInput, setSearchInput] = useState('');
@@ -744,14 +757,47 @@ export default function MapPage() {
         </div>
       )}
 
-      {/* Kendala layer badge */}
+      {/* Kendala layer panel */}
       {showKendala && !isKendalaLoading && (
-        <div className="absolute bottom-20 left-4 z-[1000] bg-red-600 text-white rounded-lg shadow-lg px-3 py-2 flex items-center gap-2">
-          <AlertTriangle size={14} />
-          <span className="text-xs font-medium">Kendala: {kendalaItems.length} titik</span>
-          <button onClick={toggleKendala} className="ml-1 hover:bg-red-700 rounded p-0.5">
-            <X size={14} />
-          </button>
+        <div className="absolute bottom-20 left-4 right-4 z-[1000] bg-white rounded-xl shadow-xl border border-red-200 p-3" style={{ maxWidth: '360px' }}>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <AlertTriangle size={16} className="text-red-600" />
+              <span className="text-sm font-bold text-red-700">Kendala</span>
+              <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium">{kendalaItems.length} titik</span>
+            </div>
+            <button onClick={toggleKendala} className="text-gray-400 hover:text-red-600 transition-colors">
+              <X size={16} />
+            </button>
+          </div>
+          <div className="space-y-2">
+            <div>
+              <label className="block text-[10px] font-medium text-gray-500 mb-0.5 uppercase">Menu Penanganan</label>
+              <select
+                value={filterMenuPenanganan}
+                onChange={(e) => setFilterMenuPenanganan(e.target.value)}
+                className="w-full border border-gray-300 rounded-md text-xs p-1.5 bg-gray-50 focus:border-red-500 focus:ring-red-500 outline-none"
+              >
+                <option value="all">Semua Menu</option>
+                {kendalaMenuOptions.map(opt => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-[10px] font-medium text-gray-500 mb-0.5 uppercase">Kategori Kendala</label>
+              <select
+                value={filterKategoriKendala}
+                onChange={(e) => setFilterKategoriKendala(e.target.value)}
+                className="w-full border border-gray-300 rounded-md text-xs p-1.5 bg-gray-50 focus:border-red-500 focus:ring-red-500 outline-none"
+              >
+                <option value="all">Semua Kategori</option>
+                {kendalaKategoriOptions.map(opt => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
+            </div>
+          </div>
         </div>
       )}
       {showKendala && isKendalaLoading && (
