@@ -111,6 +111,8 @@ export interface KendalaItem {
   channel: string;
   statusOrder: string;
   orderId: string;
+  timestamp: string;
+  bulan: string;
 }
 
 const KENDALA_SHEET_ID = '1ZCQR8Y4GvDAwGekco37y7mj8lkcJah9INYFsiH4egSM';
@@ -176,8 +178,10 @@ export async function fetchKendala(): Promise<KendalaItem[]> {
     const CHANNEL = findCol('CHANNEL', 'CHANNEL');
     const STATUS = findCol('STATUS ORDER', 'STATUS');
     const ORDER_ID = findCol('ORDER ID', 'ORDER ID');
+    const TIMESTAMP = findCol('TIMESTAMP', 'TIMESTAMP') ?? findCol('WAKTU', 'WAKTU');
+    const BULAN = findCol('BULAN', 'BULAN');
 
-    console.log('[Kendala] Column indices:', { SEKTOR, KOORDINAT, MENU, KATEGORI, KENDALA, SALES, CHANNEL, STATUS, ORDER_ID });
+    console.log('[Kendala] Column indices:', { SEKTOR, KOORDINAT, MENU, KATEGORI, KENDALA, SALES, CHANNEL, STATUS, ORDER_ID, TIMESTAMP, BULAN });
 
     const items: KendalaItem[] = [];
     let validCoordCount = 0;
@@ -187,7 +191,7 @@ export async function fetchKendala(): Promise<KendalaItem[]> {
       const cells = row.c || [];
       const val = (idx: number | undefined): string => {
         if (idx === undefined || !cells[idx]) return '';
-        return cells[idx].v?.toString()?.trim() || '';
+        return cells[idx].f || cells[idx].v?.toString()?.trim() || '';
       };
 
       const sektor = val(SEKTOR).toUpperCase();
@@ -220,6 +224,8 @@ export async function fetchKendala(): Promise<KendalaItem[]> {
         channel: val(CHANNEL),
         statusOrder: val(STATUS),
         orderId: val(ORDER_ID),
+        timestamp: val(TIMESTAMP),
+        bulan: val(BULAN),
       });
     }
 
