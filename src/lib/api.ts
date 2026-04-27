@@ -153,8 +153,23 @@ export async function fetchKendala(): Promise<KendalaItem[]> {
 
     const getIdx = (name: string): number | undefined => colIndex[name];
 
+    // Cari kolom KOORDINAT dengan partial match (bisa beda nama persis)
+    const findKoordinatIdx = (): number | undefined => {
+      // Exact match dulu
+      const exact = getIdx('KOORDINAT PELANGGAN TEKNISI');
+      if (exact !== undefined) return exact;
+      // Partial match: cari kolom yang mengandung "KOORDINAT"
+      const key = Object.keys(colIndex).find(k => k.includes('KOORDINAT'));
+      if (key) {
+        console.log(`[Kendala] Kolom koordinat ditemukan via partial match: "${key}"`);
+        return colIndex[key];
+      }
+      console.warn('[Kendala] ⚠️ Kolom KOORDINAT tidak ditemukan!');
+      return undefined;
+    };
+
     const SEKTOR = getIdx('SEKTOR');
-    const KOORDINAT = getIdx('KOORDINAT PELANGGAN TEKNISI');
+    const KOORDINAT = findKoordinatIdx();
     const MENU = getIdx('MENU PENANGANAN');
     const KATEGORI = getIdx('KATEGORI KENDALA');
     const KENDALA = getIdx('KENDALA SPESIFIK');
@@ -162,7 +177,11 @@ export async function fetchKendala(): Promise<KendalaItem[]> {
     const CHANNEL = getIdx('CHANNEL');
     const STATUS = getIdx('STATUS ORDER');
 
+    console.log('[Kendala] Column indices:', { SEKTOR, KOORDINAT, MENU, KATEGORI, KENDALA, SALES, CHANNEL, STATUS });
+
     const items: KendalaItem[] = [];
+    let validCoordCount = 0;
+    let emptyCoordCount = 0;
 
     for (const row of rows) {
       const cells = row.c || [];
@@ -178,6 +197,17 @@ export async function fetchKendala(): Promise<KendalaItem[]> {
       const koordinat = val(KOORDINAT);
       const [lat, lng] = parseCoordinateString(koordinat);
 
+      if (lat !== 0 || lng !== 0) {
+        validCoordCount++;
+      } else {
+        emptyCoordCount++;
+      }
+
+      // Log beberapa sample pertama untuk debugging
+      if (items.length < 5) {
+        console.log(`[Kendala] Sample #${items.length}: koordinat="${koordinat}" → lat=${lat}, lng=${lng}`);
+      }
+
       items.push({
         sektor,
         koordinat,
@@ -192,7 +222,7 @@ export async function fetchKendala(): Promise<KendalaItem[]> {
       });
     }
 
-    console.log(`[Kendala] Total items: ${items.length}`);
+    console.log(`[Kendala] Total: ${items.length}, valid koordinat: ${validCoordCount}, kosong/gagal: ${emptyCoordCount}`);
     return items;
   } catch (error) {
     console.error('Gagal memuat data Kendala dari Google Sheets:', error);
