@@ -238,8 +238,8 @@ export default function MapPage() {
     addSearchHistory, addVisitedODP,
     showKendala, toggleKendala, isKendalaLoading, getFilteredKendala,
     kendalaItems: allKendalaItems,
-    filterMenuPenanganan, filterKategoriKendala, filterBulanKendala,
-    setFilterMenuPenanganan, setFilterKategoriKendala, setFilterBulanKendala
+    filterMenuPenanganan, filterKategoriKendala, filterBulanKendala, filterKendalaSpesifik,
+    setFilterMenuPenanganan, setFilterKategoriKendala, setFilterBulanKendala, setFilterKendalaSpesifik
   } = useStore();
 
   // Role-based filtered ODPs (admin only sees their datel)
@@ -259,6 +259,13 @@ export default function MapPage() {
     Array.from(new Set(allKendalaItems.map(k => k.bulan).filter(Boolean))).sort(),
     [allKendalaItems]
   );
+  // Kendala Spesifik options — filtered by currently selected kategori
+  const kendalaSpesifikOptions = useMemo(() => {
+    const items = filterKategoriKendala !== 'all' 
+      ? allKendalaItems.filter(k => k.kategoriKendala === filterKategoriKendala)
+      : allKendalaItems;
+    return Array.from(new Set(items.map(k => k.kendalaSpesifik).filter(Boolean))).sort();
+  }, [allKendalaItems, filterKategoriKendala]);
 
   const [showFilters, setShowFilters] = useState(false);
   const [searchInput, setSearchInput] = useState('');
@@ -609,6 +616,7 @@ export default function MapPage() {
                     <div style={{ fontSize: '12px', lineHeight: '1.8' }}>
                       <p style={{ margin: 0 }}><span style={{ fontWeight: 600, color: '#6b7280' }}>Timestamp:</span> {item.timestamp || '-'}</p>
                       <p style={{ margin: 0 }}><span style={{ fontWeight: 600, color: '#6b7280' }}>Sektor:</span> {item.sektor}</p>
+                      {item.odpName && <p style={{ margin: 0 }}><span style={{ fontWeight: 600, color: '#6b7280' }}>ODP:</span> {item.odpName}</p>}
                       <p style={{ margin: 0 }}><span style={{ fontWeight: 600, color: '#6b7280' }}>Order ID:</span> {item.orderId || '-'}</p>
                       <p style={{ margin: 0 }}><span style={{ fontWeight: 600, color: '#6b7280' }}>Menu:</span> {item.menuPenanganan}</p>
                       <p style={{ margin: 0 }}><span style={{ fontWeight: 600, color: '#6b7280' }}>Kategori:</span> {item.kategoriKendala}</p>
@@ -803,6 +811,21 @@ export default function MapPage() {
                 ))}
               </select>
             </div>
+            {filterKategoriKendala === '-' && (
+              <div>
+                <label className="block text-[10px] font-medium text-gray-500 mb-0.5 uppercase">Kendala Spesifik</label>
+                <select
+                  value={filterKendalaSpesifik}
+                  onChange={(e) => setFilterKendalaSpesifik(e.target.value)}
+                  className="w-full border border-gray-300 rounded-md text-xs p-1.5 bg-gray-50 focus:border-red-500 focus:ring-red-500 outline-none"
+                >
+                  <option value="all">Semua Kendala Spesifik</option>
+                  {kendalaSpesifikOptions.map(opt => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div>
               <label className="block text-[10px] font-medium text-gray-500 mb-0.5 uppercase">Bulan</label>
               <select
