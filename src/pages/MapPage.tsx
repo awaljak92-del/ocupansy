@@ -604,6 +604,7 @@ export default function MapPage() {
                     </div>
                     <div style={{ fontSize: '12px', lineHeight: '1.8' }}>
                       <p style={{ margin: 0 }}><span style={{ fontWeight: 600, color: '#6b7280' }}>Sektor:</span> {item.sektor}</p>
+                      <p style={{ margin: 0 }}><span style={{ fontWeight: 600, color: '#6b7280' }}>Order ID:</span> {item.orderId || '-'}</p>
                       <p style={{ margin: 0 }}><span style={{ fontWeight: 600, color: '#6b7280' }}>Menu:</span> {item.menuPenanganan}</p>
                       <p style={{ margin: 0 }}><span style={{ fontWeight: 600, color: '#6b7280' }}>Kategori:</span> {item.kategoriKendala}</p>
                       <p style={{ margin: 0 }}><span style={{ fontWeight: 600, color: '#6b7280' }}>Kendala:</span> {item.kendalaSpesifik}</p>
