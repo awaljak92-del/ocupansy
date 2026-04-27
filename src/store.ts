@@ -70,6 +70,7 @@ interface AppState {
   error: string | null;
   loadODPs: () => Promise<void>;
   loadUsers: () => Promise<void>;
+  refreshCurrentUser: () => void;
 
   // Tracking
   searchHistory: string[];
@@ -144,9 +145,21 @@ export const useStore = create<AppState>()(
         try {
           const data = await fetchUsers(get().appScriptUrl);
           set({ users: data });
+          // Auto-refresh current user data (pick up datel changes)
+          get().refreshCurrentUser();
         } catch (err) {
           console.error("Failed to load users", err);
           throw err;
+        }
+      },
+      refreshCurrentUser: () => {
+        const { user, users } = get();
+        if (user && users.length > 0) {
+          const fresh = users.find(u => u.username === user.username);
+          if (fresh) {
+            console.log('[RBAC] Refreshing user data:', { old: user, fresh });
+            set({ user: fresh });
+          }
         }
       },
 
@@ -177,26 +190,32 @@ export const useStore = create<AppState>()(
         const { user, odps } = get();
         // Owner sees everything
         if (!user || user.role === 'owner') return odps;
-        // Admin & sales: filter by datel → kabupaten/kota mapping
-        if (user.datel) {
-          const datelUpper = user.datel.toUpperCase().trim();
-          // Mapping datel ke kabupaten/kota yang boleh dilihat
-          const DATEL_KABUPATEN_MAP: Record<string, string[]> = {
-            'PANGKALAN BUN': ['KOTAWARINGIN BARAT', 'LAMANDAU', 'SUKAMARA'],
-            'SAMPIT': ['KOTAWARINGIN TIMUR', 'SERUYAN'],
-          };
-          const allowedKabs = DATEL_KABUPATEN_MAP[datelUpper];
-          if (allowedKabs) {
-            return odps.filter(odp => {
-              const kab = odp.validate_kabupatenkota?.toUpperCase().trim();
-              return allowedKabs.includes(kab);
-            });
-          }
-          // Datel tidak ada di mapping → fallback: tidak tampilkan apa-apa
+
+        // Admin & sales: WAJIB punya datel
+        const datel = user.datel?.toUpperCase().trim();
+        if (!datel) {
+          console.warn('[RBAC] User tidak punya datel, tidak ada ODP yang ditampilkan:', user);
           return [];
         }
-        // No datel assigned → see all (fallback)
-        return odps;
+
+        // Mapping datel ke kabupaten/kota yang boleh dilihat
+        const DATEL_KABUPATEN_MAP: Record<string, string[]> = {
+          'PANGKALAN BUN': ['KOTAWARINGIN BARAT', 'LAMANDAU', 'SUKAMARA'],
+          'SAMPIT': ['KOTAWARINGIN TIMUR', 'SERUYAN'],
+        };
+        const allowedKabs = DATEL_KABUPATEN_MAP[datel];
+        if (!allowedKabs) {
+          console.warn('[RBAC] Datel tidak dikenali:', datel);
+          return [];
+        }
+
+        const filtered = odps.filter(odp => {
+          const kab = odp.validate_kabupatenkota?.toUpperCase().trim();
+          return kab ? allowedKabs.includes(kab) : false;
+        });
+
+        console.log(`[RBAC] User datel=${datel}, allowed=${allowedKabs.join(',')}, total=${odps.length}, filtered=${filtered.length}`);
+        return filtered;
       },
 
       // Filter snapshots by current user's datel
