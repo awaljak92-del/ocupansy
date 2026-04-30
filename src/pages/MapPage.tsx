@@ -433,15 +433,16 @@ export default function MapPage() {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!searchInput.trim()) {
+    const query = searchInput.trim();
+    if (!query) {
       setSearchedCenter(null);
       return;
     }
 
-    addSearchHistory(searchInput);
+    addSearchHistory(query);
 
-    // Check if it's coordinates (e.g., "-6.200, 106.816")
-    const coordMatch = searchInput.match(/^(-?\d+(\.\d+)?),\s*(-?\d+(\.\d+)?)$/);
+    // 1. Check if it's coordinates (e.g., "-6.200, 106.816")
+    const coordMatch = query.match(/^(-?\d+(\.\d+)?),\s*(-?\d+(\.\d+)?)$/);
     if (coordMatch) {
       const lat = parseFloat(coordMatch[1]);
       const lng = parseFloat(coordMatch[3]);
@@ -449,14 +450,30 @@ export default function MapPage() {
       return;
     }
 
-    // Search by ODP Name
-    const found = odps.find(o => o.ODP_NAME.toLowerCase().includes(searchInput.toLowerCase()));
-    if (found) {
-      setSearchedCenter([Number(found.LATITUDE), Number(found.LONGITUDE)]);
-      addVisitedODP(found.ODP_NAME);
-    } else {
-      alert("ODP tidak ditemukan");
+    // 2. Search by Order ID (dari data Kendala)
+    const foundKendala = allKendalaItems.find(k => 
+      k.orderId?.toLowerCase().includes(query.toLowerCase())
+    );
+
+    if (foundKendala && foundKendala.latitude && foundKendala.longitude) {
+      setSearchedCenter([foundKendala.latitude, foundKendala.longitude]);
+      // Jika layer kendala belum aktif, aktifkan otomatis
+      if (!showKendala) {
+        toggleKendala();
+      }
+      return;
     }
+
+    // 3. Search by ODP Name
+    const foundODP = odps.find(o => o.ODP_NAME.toLowerCase().includes(query.toLowerCase()));
+    if (foundODP) {
+      setSearchedCenter([Number(foundODP.LATITUDE), Number(foundODP.LONGITUDE)]);
+      addVisitedODP(foundODP.ODP_NAME);
+      return;
+    }
+
+    // Jika tidak ditemukan
+    alert("Data tidak ditemukan. Pastikan Nama ODP, Order ID, atau Koordinat sudah benar.");
   };
 
   const clearSearch = () => {
@@ -471,7 +488,7 @@ export default function MapPage() {
         <form onSubmit={handleSearch} className="flex bg-white rounded-lg shadow-lg overflow-hidden">
           <input 
             type="text" 
-            placeholder="Cari ODP atau Koordinat (Lat, Lng)..." 
+            placeholder="Cari ODP, Order ID, atau Koordinat..." 
             className="flex-1 px-4 py-3 outline-none text-sm"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
